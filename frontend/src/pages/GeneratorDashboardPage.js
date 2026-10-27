@@ -268,8 +268,8 @@ export default function GeneratorDashboardPage() {
         name: d.user_field || d.serial_number,
         model: `M-Box Lichtmast · ${d.serial_number}`,
         location_name: d.mbox_endpoint,
-        status: d.status === "ausser_betrieb" ? "offline" : d.runtime?.running ? "online" : "offline",
-        last_seen: d.runtime?.started_at || null,
+        status: d.status === "ausser_betrieb" ? "offline" : d.pi?.online ? "online" : "offline",
+        last_seen: d.pi?.last_seen || null,
         latitude: d.latitude,
         longitude: d.longitude,
         latest_telemetry: null,
@@ -514,7 +514,7 @@ export default function GeneratorDashboardPage() {
 
                       {/* Status + Time */}
                       <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                        <span className={`text-[10px] font-medium ${s.textColor}`}>{gen.kind === "mbox" ? (gen.status === "online" ? "Dienst aktiv" : "Dienst aus") : s.label}</span>
+                        <span className={`text-[10px] font-medium ${s.textColor}`}>{gen.kind === "mbox" ? (gen.status === "online" ? "Pi online" : "Pi offline") : s.label}</span>
                         <span className="text-[10px] text-gray-400">{lastSeen}</span>
                       </div>
 

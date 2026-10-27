@@ -20,6 +20,11 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Pi-Online-Anzeige + GPS auf der M-Box-Seite)
+- Monitoring-Liste: M-Box-Punkt ist nur grün („Pi online"), wenn der Pi sich in den letzten 20 s per Key am Backend gemeldet hat (`pi.online`), nicht mehr wenn nur der Node-Dienst läuft; Zeitstempel = letzte Pi-Meldung.
+- M-Box-Seite Info-Leiste: `GpsAnzeige` (lat/lon 5 Dezimalen, 2D/3D, genutzte Sat, ±m aus epx/epy, Alter bei Pi offline, Google-Maps-Link; Zustände: nicht eingerichtet / Pi offline / gpsd läuft nicht / kein Fix + sichtbare Sat). `/status` wird alle 10 s nachgeladen.
+- Pi-Skript **v1.2.0** `read_gps`: gpsd-JSON-WATCH (entspricht `gpspipe -w`, kein Direktzugriff auf /dev/ttyACM0), liefert mode/sats/sats_visible(nSat/uSat)/epx/epy/altMSL/speed/time/gpsd-Flag, Abfrage alle 10 s. Backend speichert `mbox_pi_gps_status` immer, `mbox_pi_gps` nur bei Fix. Mit Fake-gpsd lokal verifiziert.
+
 ### 2026-06 (Änderung: DAC wird vom Setup-Skript als ALSA-Standard gesetzt, keine Geräteauswahl im Portal)
 - Setup-Skript Schritt „[2/6] DAC als Standard-Audioausgabe": erkennt per `aplay -l` die DAC/USB-Karte (Muster dac|usb|codec|hifiberry|iqaudio|pcm5|wm8, HDMI/vc4 ausgeschlossen, sonst erste Nicht-HDMI-Karte) und schreibt `/etc/asound.conf` (`defaults.pcm.card N`, `defaults.ctl.card N`) + setzt Mixer-Lautstärke. Verifiziert mit simulierter aplay-Ausgabe (HDMI + HiFiBerry + USB → card 1 DAC).
 - Entfernt: Dropdown „Ausgabegerät" im Audio-Reiter, Endpoint `POST /audio/device`, ALSA-Feld im Pi-Setup-Formular. `audio_device` bleibt im Pi-Skript/Konfig immer leer → Standard (= DAC).

@@ -33,9 +33,12 @@ export function useMBox(deviceId, seite) {
 
   useEffect(() => {
     if (!deviceId) return;
-    api.get(`/mbox/${deviceId}/status`).then(r => setInfo(r.data)).catch(e => {
-      setInfo({ error: e.response?.data?.detail || "Status nicht ladbar", level: "none" });
+    const lade = () => api.get(`/mbox/${deviceId}/status`).then(r => setInfo(r.data)).catch(e => {
+      setInfo(prev => prev && !prev.error ? prev : { error: e.response?.data?.detail || "Status nicht ladbar", level: "none" });
     });
+    lade();
+    const t = setInterval(lade, 10000);
+    return () => clearInterval(t);
   }, [deviceId]);
 
   useEffect(() => {

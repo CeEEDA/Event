@@ -95,6 +95,7 @@ def pi_state(device: dict) -> dict:
         "last_seen": last,
         "playing": device.get("mbox_pi_playing") if online else None,
         "gps": device.get("mbox_pi_gps"),
+        "gps_status": device.get("mbox_pi_gps_status"),
         "files": device.get("mbox_pi_files") or [],
         "volume": device.get("mbox_pi_volume"),
         "audio_device": device.get("mbox_pi_audio_device") or "",

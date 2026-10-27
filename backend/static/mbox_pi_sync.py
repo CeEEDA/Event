@@ -29,7 +29,7 @@ import requests
 CONF_PATH = "/etc/mbox_pi.conf"
 AUDIO_DIR = "/opt/mbox_audio"
 POLL_SEC = 3
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mbox_pi")
@@ -51,11 +51,15 @@ def load_conf():
 # ---------------- GPS (gpsd Socket, wie dse5510_sync) ----------------
 
 def read_gps(timeout=4.0):
-    result = {"lat": None, "lon": None, "fix": False, "mode": 0, "sats": None}
+    """Position von gpsd (JSON-WATCH, entspricht 'gpspipe -w'). NICHT direkt /dev/ttyACM0 lesen.
+    mode: 1 = kein Fix, 2 = 2D, 3 = 3D; lat/lon nur ab mode >= 2 gueltig."""
+    result = {"lat": None, "lon": None, "fix": False, "mode": 0, "sats": None, "sats_visible": None,
+              "epx": None, "epy": None, "alt": None, "speed": None, "time": None, "gpsd": False}
     try:
         s = socket.create_connection(("127.0.0.1", 2947), timeout=2)
     except Exception:
         return result
+    result["gpsd"] = True
     try:
         s.settimeout(timeout)
         s.sendall(b'?WATCH={"enable":true,"json":true}\n')
@@ -77,11 +81,18 @@ def read_gps(timeout=4.0):
                     continue
                 if msg.get("class") == "TPV":
                     mode = int(msg.get("mode", 0))
-                    if mode >= 2 and msg.get("lat") is not None and mode >= result["mode"]:
-                        result.update({"lat": float(msg["lat"]), "lon": float(msg["lon"]), "fix": True, "mode": mode})
+                    result["mode"] = max(result["mode"], mode)
+                    if mode >= 2 and msg.get("lat") is not None and msg.get("lon") is not None:
+                        result.update({
+                            "lat": float(msg["lat"]), "lon": float(msg["lon"]), "fix": True, "mode": mode,
+                            "epx": msg.get("epx"), "epy": msg.get("epy"),
+                            "alt": msg.get("altMSL", msg.get("alt")), "speed": msg.get("speed"), "time": msg.get("time"),
+                        })
                 elif msg.get("class") == "SKY":
-                    result["sats"] = len([x for x in msg.get("satellites", []) if x.get("used")])
-            if result["mode"] >= 3:
+                    sats = msg.get("satellites", [])
+                    result["sats_visible"] = msg.get("nSat", len(sats))
+                    result["sats"] = msg.get("uSat", len([x for x in sats if x.get("used")]))
+            if result["mode"] >= 3 and result["sats"] is not None:
                 break
     except Exception as e:
         log.debug(f"GPS: {e}")
@@ -302,7 +313,7 @@ def main():
     while True:
         t0 = time.time()
         try:
-            if t0 - last_gps_t > 20:
+            if t0 - last_gps_t > 10:
                 last_gps, last_gps_t = read_gps(), t0
             if t0 - last_files_t > 60 or not have:
                 have, last_files_t = local_files(), t0

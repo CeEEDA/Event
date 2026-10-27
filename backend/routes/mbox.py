@@ -483,9 +483,14 @@ async def mbox_pi_sync(device_id: str, body: dict):
     if body.get("volume") is not None and device.get("mbox_pi_volume") is None:
         upd["mbox_pi_volume"] = body.get("volume")
     gps = body.get("gps") or {}
+    if gps:
+        upd["mbox_pi_gps_status"] = {"gpsd": gps.get("gpsd"), "mode": gps.get("mode"), "sats": gps.get("sats"),
+                                     "sats_visible": gps.get("sats_visible"), "ts": now}
     if gps.get("fix") and gps.get("lat") is not None and gps.get("lon") is not None:
         upd["mbox_pi_gps"] = {"lat": float(gps["lat"]), "lon": float(gps["lon"]), "fix": True,
-                              "mode": gps.get("mode"), "sats": gps.get("sats"), "ts": now}
+                              "mode": gps.get("mode"), "sats": gps.get("sats"), "sats_visible": gps.get("sats_visible"),
+                              "epx": gps.get("epx"), "epy": gps.get("epy"), "alt": gps.get("alt"),
+                              "speed": gps.get("speed"), "gps_time": gps.get("time"), "ts": now}
         upd["latitude"], upd["longitude"] = float(gps["lat"]), float(gps["lon"])
     await db.devices.update_one({"id": device_id}, {"$set": upd})
     pending = await db.mbox_pi_commands.find({"device_id": device_id, "status": "pending"}, {"_id": 0}).sort("created_at", 1).to_list(20)

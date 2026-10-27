@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Wrench, Clock, Radio, Lightbulb } from "lucide-react";
+import { ArrowLeft, RefreshCw, Wrench, Clock, Radio, Lightbulb, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
@@ -22,6 +22,30 @@ const TABS = [
 ];
 // Kunden sehen nur Licht (Übersicht, eingeschränkt) und Audio-Durchsagen
 const KUNDE_TABS = new Set(["uebersicht", "durchsage"]);
+
+// GPS-Position vom Pi im Mast (gpsd, u-blox USB): nur ab mode >= 2 gueltig
+function GpsAnzeige({ pi }) {
+  const gps = pi?.gps;
+  const st = pi?.gps_status;
+  const alterMin = gps?.ts ? Math.round((Date.now() - new Date(gps.ts).getTime()) / 60000) : null;
+  let text, farbe = "text-gray-400";
+  if (!pi?.configured) text = "Pi nicht eingerichtet";
+  else if (!pi.online && !gps) text = "Pi offline";
+  else if (gps?.fix) {
+    const acc = gps.epx != null && gps.epy != null ? Math.round(Math.max(gps.epx, gps.epy)) : null;
+    text = `${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)} · ${gps.mode === 3 ? "3D" : "2D"}${gps.sats != null ? ` · ${gps.sats} Sat` : ""}${acc != null ? ` · ±${acc} m` : ""}${!pi.online && alterMin != null ? ` · vor ${alterMin} min` : ""}`;
+    farbe = pi.online ? "text-emerald-700" : "text-gray-500";
+  } else if (st && st.gpsd === false) { text = "gpsd läuft nicht"; farbe = "text-red-600"; }
+  else { text = `kein GPS-Fix${st?.sats_visible != null ? ` · ${st.sats_visible} Sat sichtbar` : ""} (Suche…)`; farbe = "text-amber-600"; }
+  return (
+    <span className={`flex items-center gap-1 ${farbe}`} data-testid="mbox-gps">
+      <MapPin className="w-3.5 h-3.5" /> GPS: <span className="font-mono" data-testid="mbox-gps-text">{text}</span>
+      {gps?.fix && (
+        <a href={`https://www.google.com/maps?q=${gps.lat},${gps.lon}`} target="_blank" rel="noreferrer" className="underline hover:text-fuchsia-600" data-testid="mbox-gps-map-link">Karte</a>
+      )}
+    </span>
+  );
+}
 
 // Status-Pills im Stil der Generator-Detailseite (heller Hintergrund, Rand, Punkt)
 const PILL = {
@@ -112,6 +136,7 @@ export default function MBoxPage() {
             <span className="flex items-center gap-1"><Lightbulb className="w-3.5 h-3.5" /> M-Box Fernbedienung</span>
             <span className="flex items-center gap-1 font-mono"><Radio className="w-3.5 h-3.5" /> {info?.device?.mbox_endpoint || "…"}</span>
             <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> SPS-Zeit: <span data-testid="mbox-pill-zeit">{spsZeit || "–"}</span></span>
+            <GpsAnzeige pi={info?.device?.pi} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Pill art={sz === 2 ? "err" : sz === 1 ? "warn" : "ok"} testId="mbox-pill-stoerung">{sz === 2 ? "Störung" : sz === 1 ? "Quittieren" : "keine Störung"}</Pill>
