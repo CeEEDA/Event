@@ -44,3 +44,14 @@ Rate-Limit: 30 schreibende Befehle/min je Benutzer+Gerät. Jeder Schreibzugriff 
 - `BadSecurityPolicyRejected` / `BadIdentityTokenRejected` → Security/Benutzer im Gerät passt nicht zu TIA.
 - Nach TIA-Änderung der Schnittstelle: Admin → Schraubenschlüssel (Dienst neu starten) oder `POST /api/mbox/<id>/neu_verbinden`.
 - Log eines Masts: `GET /api/mbox/<id>/log?lines=200` (Admin).
+
+## Pi im Lichtmast (Audio-Durchsagen + USB-GPS)
+- Hardware: Raspberry Pi mit Soundkarte (USB/HAT) + USB-GPS-Antenne. Internet (LTE/WLAN) zum Portal noetig; der Pi pollt, es ist keine eingehende Verbindung erforderlich.
+- Einrichtung (wie DSE 5510): Geraeteverwaltung -> M-Box -> "Pi-Setup generieren" -> wget-Befehl auf dem Pi ausfuehren. Installiert mpg123, gpsd, `/opt/mbox_pi_sync.py`, `/etc/mbox_pi.conf`, Dienst `mbox_pi`.
+- Audiodateien liegen auf dem Server in `backend/mbox_service/audio/` (aktuell `testansage.mp3`) und werden automatisch auf jeden Pi synchronisiert (Manifest mit SHA-256).
+- Soundkarte waehlen: `aplay -l` auf dem Pi, ALSA-Name (z.B. `hw:1,0`) im Setup-Formular eintragen. GPS pruefen: `gpsmon` / `cgps`.
+- Status: Reiter "Audio" auf der M-Box-Seite (online < 20 s seit letzter Meldung, GPS-Fix, laufende Wiedergabe, letzte Befehle). Log auf dem Pi: `journalctl -u mbox_pi -f`.
+
+## Kunden-Zuweisung
+- Kunde bekommt in der Benutzerverwaltung die EpiRent-Kundennummer. Dann sieht er unter "Power Monitoring" alle M-Boxen im Umkreis (1 km, waechst in 500-m-Schritten bis "Masten laut Auftrag", max. 10 km) der Veranstaltungsadresse seiner heute aktiven Auftraege (Dispo-Zeitraum). Position des Masts = Pi-GPS, sonst Koordinaten am Geraet.
+- Kunde darf nur Licht (Lampen, Schnellstart/-stop, Quittieren) und Durchsagen. Manuelle Korrektur in der Auftrags-Kachel "M-Box Lichtmasten" (zuweisen / ausschliessen).

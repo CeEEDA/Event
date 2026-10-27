@@ -1,0 +1,39 @@
+{
+  "summary": "M-Box Ausbaustufe getestet (Pi-Setup/Sync/Audio, Auftrags-Zuweisung, Kunden-Rechte, Kundennummer, Generator-Datenleck-Fix) Backend + Frontend. Backend: 40/40 Pytest-Tests gruen (nach Lockerung einer Test-Annahme). Frontend: alle angefragten Flows gruen – Admin Audio-Reiter (8 Reiter, Abspielen -> 'Durchsage gestartet' bei simuliertem Pi online, Lautstaerke-Setzen), Benutzerverwaltung Kundennummer-Block, Auftrag-Kachel 'M-Box Lichtmasten' (an echtem Auftrag 128, da 999901 erwartungsgemaess 'Auftrag nicht gefunden' zeigt) inkl. manuell zuweisen/Reset, Geraeteverwaltung Pi-Setup (confirm -> wget-Befehl), Kunde (Hub-Kachel Power Monitoring, genau 1 mbox-row, nur 2 Reiter, Hinweisbox, Licht-Buttons aktiv, Gen/Netz/NUB/Restart/Diagnose fehlen, Audio ohne Lautstaerke, Offline-Warn-Toast, Zurueck -> /hub).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/mbox/pi/{id}/sync", "issue": "Befehle, die waehrend Pi offline eingereiht wurden (play/stop), bleiben unbegrenzt 'pending' und werden beim naechsten Sync ausgeliefert – auch nach Stunden und auch nach Neu-Generierung des Pi-Keys (pi-setup). Ein alter 'play' kann so z.B. nachts unerwartet abspielen. Empfehlung: pending-Befehle mit Ablaufzeit (z.B. 60 s) versehen oder bei pi-setup verwerfen."},
+      {"endpoint": "POST /api/mbox/{id}/pi-setup", "issue": "int(body.get('volume') or 85) -> volume 0 wird zu 85 (gleiches in audio/volume nicht betroffen)."},
+      {"endpoint": "customer_device_ids (alle Kunden-Requests)", "issue": "Liest bei JEDEM Kunden-Request bis zu 2000 orders_cache-Dokumente + alle mbox-Geraete und rechnet compute_order_mboxes pro aktivem Auftrag; Filter auf customer_no nicht in der Mongo-Query (wegen int/str). Bei vielen Auftraegen langsam; Auftraege >2000 werden ignoriert. Empfehlung: Query {customer_no: {$in:[cno, int(cno) falls numerisch]}}."},
+      {"endpoint": "GET /api/generators/stats/overview (Kunde)", "issue": "Kunde sieht im Monitoring 'Gesamt 0', obwohl die M-Box-Zeile gelistet wird – Statistik zaehlt M-Boxen nicht (kosmetisch)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/mbox/:id (Admin)", "issues": ["Zwei Reiter mit 'Audio' im Namen: 'Steckdosen & Audio' (testid mbox-tab-btn-audio) und neuer 'Audio' (mbox-tab-btn-durchsage) – verwechslungsgefaehrlich, z.B. neuen Reiter 'Durchsagen' nennen."]},
+      {"screen": "/orders/:pk", "issues": ["Karte 'Standort & Generatoren' zeigt Radius 5 km, M-Box-Kachel 1 km – zwei unterschiedliche Radien auf derselben Seite koennen verwirren (nur Hinweis)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_mbox_pi_kunde.py", "/app/test_reports/pytest/pytest_mbox_pi_kunde.xml"],
+  "action_items": [
+    "Optional: Ablaufzeit fuer pending Pi-Befehle / Verwerfen bei neuem Pi-Key",
+    "Optional: customer_device_ids-Query auf customer_no filtern (Performance)",
+    "Optional: Reiter-Benennung 'Audio' vs 'Steckdosen & Audio' entschaerfen",
+    "Optional: pi-setup volume=0 korrekt uebernehmen"
+  ],
+  "critical_code_review_comments": [
+    "mbox_pi_sync speichert GPS dauerhaft in latitude/longitude – manuell gepflegte Koordinaten werden ueberschrieben (gewollt laut Spec, aber nicht ruecksetzbar).",
+    "pending-Befehle ohne TTL (s.o.).",
+    "Pi-Sync/command-result/audio-Download ohne Rate-Limit; Key-Vergleich via hmac.compare_digest korrekt; path traversal bei audio/play und Download durch basename+Manifest-Check abgesichert (getestet).",
+    "Rechte-Matrix Kunde sauber zentral ueber _allow()/KUNDE_BEFEHLE; /knoten,/log,/restart,/audit,/audio/volume,/einstellung,/uhr/* liefern 403 (getestet)."
+  ],
+  "updated_files": ["/app/backend/tests/test_mbox_pi_kunde.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Keine neuen Seeds. Pi-Commands (play/stop/volume) in mbox_pi_commands erzeugt. Pi-Key von MBOX-TEST-1 wurde mehrfach neu generiert (letzter Key in /tmp/mbox_pi_key.txt).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Endzustand: Kunde customer_no TM-4711, Auftrag 999901 expected_count 1, keine Overrides (999901 und 128). MBOX-TEST-1 hat Position 50.43/7.47 aus Pi-Sync. Pytest-Datei test_mbox_pi_kunde.py erzeugt sich den Pi-Key selbst (pi-setup) und laeuft in ~50 s (inkl. 22 s Offline-Wartezeit). /orders/999901 zeigt im Frontend 'Auftrag nicht gefunden' (nur Cache, erwartet) – fuer UI echten Auftrag 128 verwenden (tile-mbox)."
+}

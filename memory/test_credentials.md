@@ -9,6 +9,11 @@
 
 ## M-Box Test-Gerät (Preview)
 - Geräteverwaltung: `MBOX-TEST-1` („Lichtmast Test 1"), Typ M-Box, Endpoint opc.tcp://192.168.0.100:4840, Port 8101 – keine echte SPS im Preview → immer „Zeitüberschreitung: Verbinden"
+- Pi-Simulation: Pi-Setup wurde generiert (Key-Prefix im Gerät `mbox_pi_key_prefix`); Pi-GPS 50.43/7.47 per `/api/mbox/pi/<id>/sync` eingespielt
+
+## M-Box Testkunde + Testauftrag (Preview)
+- **Test Meier (Kunde, customer_no TM-4711)**: kunde.meier@test.com / Meier2026!
+- Testauftrag in `orders_cache`: primary_key 999901 „Testfest Neuwied (M-Box)", customer_no TM-4711, dispo 2026-01-01..2027-12-31, Koordinaten 50.4335/7.4720 (`order_settings`) → MBOX-TEST-1 liegt 0,41 km entfernt (auto zugewiesen). Hinweis: kein EpiRent-Auftrag, `/api/orders/epirent/999901` liefert daher Fehler – `/api/mbox/orders/999901` funktioniert.
 
 ## Freelancer Accounts (Preview)
 - **Test 12 (Freelancer, Aufträge: 33, 21, 163)**: test12@test.de / Freelance2026!

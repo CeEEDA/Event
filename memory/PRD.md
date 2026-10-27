@@ -20,6 +20,15 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Ausbaustufe: Audio-Durchsage via Pi + Kunden-Zuweisung per Umkreis)
+- **Pi im Lichtmast** (DSE-5510-Muster): `routes/mbox_pi.py` + `static/mbox_pi_sync.py`. Admin generiert in der Geräteverwaltung ein Setup-Skript mit Geräteschlüssel (`mbox_pi_key_hash`), Pi pollt `POST /api/mbox/pi/{id}/sync` alle 3 s (GPS via gpsd, Abspielstatus, Dateien), holt Befehle (`mbox_pi_commands`: play/stop/volume/sync_files) + Audio-Manifest (`mbox_service/audio/`, aktuell `testansage.mp3`, SHA-256-Abgleich), meldet Ergebnisse. Pi-GPS schreibt `latitude/longitude` des Geräts.
+- **Reiter „Audio"** (rechts neben Diagnose, `AudioPiTab.jsx`): Durchsage abspielen/stoppen, Pi-Status (online < 20 s), GPS, letzte Befehle, Lautstärke (nur Mitarbeiter/Admin).
+- **Kunden-Zuweisung**: `users.customer_no` (EpiRent-Kundennummer, Feld im UserEditModal). `compute_order_mboxes`: Umkreis 1 km um `order_settings.center`, wächst in 0,5-km-Schritten bis `expected_count` (max 10 km); Overrides `mbox_order_overrides` (add/remove); gilt im Dispo-Zeitraum (`order_active`), live berechnet. Kunde: `mbox_level == "kunde"`, nur `KUNDE_BEFEHLE` (Licht) + Audio play/stop; `/mbox/:id` zeigt nur Übersicht (ohne Generator/Netz) + Audio. Hub-Kachel Power Monitoring für Kunden mit Kundennummer.
+- **Auftrags-Kachel „M-Box Lichtmasten"** (`MBoxOrderTab.jsx`, Tab `mbox` in OrderDetailPage): Liste mit Distanz/auto-manuell/Pi-Status, „Masten laut Auftrag", manuell zuweisen/ausschließen/zurücksetzen.
+- **Sicherheitsfix nebenbei**: `generators.py` Auto-Include von Stromerzeuger-Geräten lief für Kunden ohne `access_all` → Kunden sahen alle Generatoren. Jetzt nur admin/mitarbeiter/access_all (Liste + Stats).
+- **Tests**: `tests/test_mbox_pi_kunde.py` (20 Tests) + Testing-Agent iteration_89 (Backend 40/40, Frontend alle Flows grün). Testdaten: Kunde kunde.meier@test.com (TM-4711), Auftrag 999901 in `orders_cache`.
+- **Offen / nächste Ausbaustufe**: Kunden-Upload eigener Audiodateien (pro Kunde/Auftrag, Manifest pro Mast filtern), Abnahme am echten Pi/Mast.
+
 ### 2026-06 (Design: M-Box-Seite im Portal-Look, gelbes Badge entfernt)
 - `MBoxPage.jsx` an `GeneratorDetailPage` angeglichen: weißer Sticky-Header (Zurück | Name/Untertitel, Online/Offline-Pill, Aktionen, Logo), roter Banner bei fehlender Verbindung, Info-Leiste (Endpoint, SPS-Zeit) + Zustands-Pills, Reiter in weißer Karte mit Fuchsia-Unterstrich, Karten mit Uppercase-Titeln (`MBoxUi.Karte`), Haupt-Buttons/Balken in Fuchsia statt Sky. Listen-Zeile ohne gelbes „M-Box"-Badge (Typ steht in der Unterzeile).
 
