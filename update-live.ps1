@@ -207,6 +207,47 @@ if (-not $SkipBackend) {
             Log "           Node.js LTS 22 installieren: https://nodejs.org (winget install OpenJS.NodeJS.LTS), danach Update erneut ausfuehren." "Yellow"
         }
     }
+
+    # ffmpeg fuer Durchsagen (Rauschfilter + 0 dB): fehlt oder veraltet -> nach tools\ffmpeg laden (gyan.dev release-essentials)
+    $FfTools = Join-Path $LiveDir "tools\ffmpeg"
+    $FfExe   = Join-Path $FfTools "bin\ffmpeg.exe"
+    $FfLocal = $null
+    $FfBin = $null
+    if (Test-Path $FfExe) { $FfBin = $FfExe }
+    elseif (Get-Command ffmpeg -ErrorAction SilentlyContinue) { $FfBin = (Get-Command ffmpeg).Source }
+    if ($FfBin) {
+        try { $FfLocal = ((& $FfBin -version 2>&1 | Select-Object -First 1) -replace '^ffmpeg version\s+(\S+).*$', '$1') -replace '-.*$', '' } catch { $FfLocal = $null }
+    }
+    $FfLatest = $null
+    try { $FfLatest = (Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/release-version" -UseBasicParsing -TimeoutSec 20).Content.Trim() } catch { }
+    $FfNeed = $false
+    if (-not $FfBin) { $FfNeed = $true; Log "  ffmpeg fehlt - wird installiert" "Yellow" }
+    elseif ($FfLatest -and $FfLocal -and ([version]($FfLocal -replace '[^\d.]','') -lt [version]($FfLatest -replace '[^\d.]',''))) { $FfNeed = $true; Log "  ffmpeg $FfLocal veraltet (aktuell $FfLatest) - wird aktualisiert" "Yellow" }
+    elseif ($FfBin) { Log "  ffmpeg OK ($FfLocal, $FfBin)" }
+    if ($FfNeed) {
+        $FfZip = Join-Path $env:TEMP "ffmpeg-release-essentials.zip"
+        $FfTmp = Join-Path $env:TEMP "ffmpeg_extract"
+        try {
+            Log "  ffmpeg: Download https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip ..."
+            $ProgressPreference = "SilentlyContinue"
+            Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $FfZip -UseBasicParsing -TimeoutSec 600
+            if (Test-Path $FfTmp) { Remove-Item $FfTmp -Recurse -Force }
+            Expand-Archive -Path $FfZip -DestinationPath $FfTmp -Force
+            $NewExe = Get-ChildItem -Path $FfTmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+            if (-not $NewExe) { throw "ffmpeg.exe nicht im Archiv" }
+            New-Item -ItemType Directory -Path $FfTools -Force | Out-Null
+            if (Test-Path (Join-Path $FfTools "bin")) { Remove-Item (Join-Path $FfTools "bin") -Recurse -Force }
+            Copy-Item -Path $NewExe.Directory.FullName -Destination (Join-Path $FfTools "bin") -Recurse -Force
+            $v = (& $FfExe -version 2>&1 | Select-Object -First 1)
+            Log "  ffmpeg installiert: $v -> $FfExe"
+        } catch {
+            Log "  FEHLER: ffmpeg Installation fehlgeschlagen: $_" "Red"
+            Log "         Das Backend versucht es beim Start erneut; alternativ im Portal (Durchsagen) 'Jetzt installieren'." "Red"
+        } finally {
+            Remove-Item $FfZip -Force -ErrorAction SilentlyContinue
+            Remove-Item $FfTmp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 } else {
     Log "[4/6] Backend uebersprungen (-SkipBackend)" "DarkGray"
 }

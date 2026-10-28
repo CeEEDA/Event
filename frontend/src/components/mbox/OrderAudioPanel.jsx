@@ -130,6 +130,16 @@ export function OrderAudioPanel({ orderPk }) {
     } catch (err) { toast.error(err.response?.data?.detail || "Start fehlgeschlagen"); }
     finally { setBusy(false); load(); }
   };
+  const ffmpegInstallieren = async () => {
+    toast.info("ffmpeg wird heruntergeladen und installiert (ca. 100 MB) – bitte warten…");
+    try {
+      const r = await api.post("/mbox/service/ffmpeg/install");
+      if (r.data.install?.running) toast.info("Download läuft noch im Hintergrund – gleich erneut prüfen");
+      else if (r.data.bin) toast.success(`ffmpeg ${r.data.version || ""} bereit`);
+      else toast.error(r.data.install?.message || "Installation fehlgeschlagen");
+    } catch (e) { toast.error(e.response?.data?.detail || "Installation fehlgeschlagen"); }
+    load();
+  };
   const stop = async () => {
     setBusy(true);
     try { await api.post(`/mbox/orders/${orderPk}/audio/stop`, { device_ids: selected }); clearCountdown(); toast.success(`Stopp an ${zielText()} gesendet`); }
@@ -178,7 +188,11 @@ export function OrderAudioPanel({ orderPk }) {
           {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />} Sprachdatei hochladen
         </Button>
         <span className="text-[11px] text-gray-400 w-full sm:w-auto">MP3/WAV bis 25 MB · wird automatisch auf Rauschen geprüft und auf 0 dB normalisiert</span>
-        {data && data.ffmpeg === false && <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> ffmpeg fehlt auf dem Server – Dateien werden ungeprüft übernommen</span>}
+        {data && data.ffmpeg === false && (
+          <span className="text-[11px] text-amber-600 flex items-center gap-1 flex-wrap" data-testid="order-audio-ffmpeg-missing"><AlertTriangle className="w-3 h-3" /> ffmpeg fehlt auf dem Server – Dateien werden ungeprüft übernommen
+            {!data.kunde && <button type="button" onClick={ffmpegInstallieren} className="underline font-semibold hover:text-amber-800" data-testid="order-audio-ffmpeg-install">Jetzt installieren</button>}
+          </span>
+        )}
       </div>
 
       {/* Dateien */}

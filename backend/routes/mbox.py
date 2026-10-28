@@ -425,6 +425,26 @@ async def mbox_service_install(user: dict = Depends(get_user)):
     return {"ok": _install["ok"], **service_info()}
 
 
+@router.get("/service/ffmpeg")
+async def mbox_ffmpeg_status(user: dict = Depends(get_user)):
+    _require(user, "admin")
+    import ffmpeg_setup
+    return await ffmpeg_setup.status()
+
+
+@router.post("/service/ffmpeg/install")
+async def mbox_ffmpeg_install(force: bool = False, user: dict = Depends(get_user)):
+    """ffmpeg (Windows) nach tools/ffmpeg installieren bzw. auf die aktuelle Version bringen."""
+    _require(user, "admin")
+    import ffmpeg_setup
+    task = asyncio.create_task(ffmpeg_setup.install_or_update(force=force))
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=100)
+    except asyncio.TimeoutError:
+        pass
+    return await ffmpeg_setup.status()
+
+
 @router.get("/{device_id}/status")
 async def mbox_status(device_id: str, user: dict = Depends(get_user)):
     await _allow(user, "lesen", device_id)

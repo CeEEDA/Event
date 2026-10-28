@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (ffmpeg automatisch installieren/aktualisieren)
+- Neu `backend/ffmpeg_setup.py`: `find_ffmpeg()` (FFMPEG_BIN -> `<LiveDir>/tools/ffmpeg/bin` -> PATH -> `C:\ffmpeg\bin`/ProgramFiles/winget), `local_version()`, `latest_version()` (gyan.dev release-version, 1 h Cache), `install_or_update()` (Windows: Zip release-essentials laden, entpacken nach tools/ffmpeg/bin; Linux: nur Hinweis Systempaket), `ensure_on_startup()` (server.py startup). `mbox_audio.py` nutzt den gefundenen Pfad (`_run_ff`). Admin-Routen `GET /api/mbox/service/ffmpeg`, `POST /api/mbox/service/ffmpeg/install`. OrderAudioPanel: "ffmpeg fehlt" + Button "Jetzt installieren" (Mitarbeiter). `update-live.ps1`: ffmpeg-Schritt (Version vergleichen, Download/Expand nach tools\ffmpeg, Fehler rot). `.gitignore` tools/ffmpeg/. Preview (Linux, ffmpeg 5.1.9 Systempaket): Status-Route ok, 26 Audio-Tests gruen.
+
 ### 2026-06 (Live: „Node-Abhängigkeiten fehlen" – Selbstheilung)
 - Live-Fehler „Auf dem Server fehlen die Node-Abhängigkeiten des M-Box Dienstes": `node_modules` in `backend/mbox_service` fehlte (npm install in update-live.ps1 nicht gelaufen/gescheitert oder npm nicht im PATH).
 - `routes/mbox.py`: `_find_bin()` sucht node/npm auch unter `%ProgramFiles%\nodejs` (NSSM-Dienst ohne PATH); `install_dependencies()` führt `npm install --omit=dev` aus (Windows via `cmd /c`, Log `mbox_service/logs/npm_install.log`), startet danach alle Geräte-Dienste; `start_all()` installiert beim Backend-Start automatisch, wenn node-opcua fehlt. Neue Admin-Routen `GET /api/mbox/service/info`, `POST /api/mbox/service/install` (wartet bis 100 s, läuft sonst im Hintergrund weiter). Status liefert `service` (Ordner, node/npm-Pfad, Install-Status) für Admins.

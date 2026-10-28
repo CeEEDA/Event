@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from routes import mbox_pi
 from routes.mbox import get_user, _audit, _rate_check
+import ffmpeg_setup
 
 router = APIRouter(prefix="/api/mbox", tags=["mbox-audio"])
 db = None
@@ -57,7 +59,16 @@ async def delete_stored(stored: str) -> None:
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return ffmpeg_setup.find_ffmpeg() is not None
+
+
+def _ff() -> str:
+    return ffmpeg_setup.find_ffmpeg() or "ffmpeg"
+
+
+def _run_ff(args: list, timeout: int):
+    kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+    return subprocess.run([_ff(), *args], capture_output=True, text=True, timeout=timeout, **kwargs)
 
 
 def _sha_size(path: Path):
@@ -70,8 +81,8 @@ def _sha_size(path: Path):
 
 def _analyze(path: Path) -> dict:
     """volumedetect + astats: Spitzenpegel, Mittelwert, Rauschteppich, Dauer."""
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af", "volumedetect,astats=measure_overall=Noise_floor+Peak_level+RMS_level:measure_perchannel=none",
-                        "-f", "null", "-"], capture_output=True, text=True, timeout=300)
+    r = _run_ff(["-hide_banner", "-nostats", "-i", str(path), "-af", "volumedetect,astats=measure_overall=Noise_floor+Peak_level+RMS_level:measure_perchannel=none",
+                 "-f", "null", "-"], 300)
     out = r.stderr
     def grab(pattern):
         m = re.search(pattern, out)
@@ -95,7 +106,7 @@ def process_audio(src: Path, dst: Path) -> dict:
     stage = src
     tmp_wav = dst.with_suffix(".denoised.wav")
     if noisy:
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-y", "-i", str(src), "-af", "afftdn=nf=-25", str(tmp_wav)], capture_output=True, text=True, timeout=600)
+        r = _run_ff(["-hide_banner", "-y", "-i", str(src), "-af", "afftdn=nf=-25", str(tmp_wav)], 600)
         if r.returncode != 0:
             raise RuntimeError((r.stderr or "ffmpeg afftdn Fehler")[-300:])
         stage = tmp_wav
@@ -105,8 +116,7 @@ def process_audio(src: Path, dst: Path) -> dict:
     if abs(gain) > 0.1:
         filters.append(f"volume={gain:.2f}dB")
     filters.append("alimiter=limit=0.999")
-    cmd = ["ffmpeg", "-hide_banner", "-y", "-i", str(stage), "-af", ",".join(filters), "-codec:a", "libmp3lame", "-b:a", "192k", str(dst)]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    r = _run_ff(["-hide_banner", "-y", "-i", str(stage), "-af", ",".join(filters), "-codec:a", "libmp3lame", "-b:a", "192k", str(dst)], 600)
     tmp_wav.unlink(missing_ok=True)
     if r.returncode != 0 or not dst.exists():
         raise RuntimeError((r.stderr or "ffmpeg Fehler")[-300:])

@@ -2365,6 +2365,13 @@ async def startup_event():
     except Exception as _e:
         logger.warning(f"M-Box Durchsagen-Timer konnte nicht starten: {_e}")
 
+    # ffmpeg fuer Durchsagen: fehlt/veraltet (Windows) -> automatisch nach tools/ffmpeg installieren
+    try:
+        import ffmpeg_setup as _ffmpeg_setup
+        asyncio.create_task(_ffmpeg_setup.ensure_on_startup())
+    except Exception as _e:
+        logger.warning(f"ffmpeg-Pruefung konnte nicht starten: {_e}")
+
     # Health-Diag Log-Loop (alle 15 Min RSS/FDs/Tasks/Mongo-Ping)
     try:
         from routes.system_diag import start_health_diag_logger
