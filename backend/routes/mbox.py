@@ -149,12 +149,85 @@ def _proc_alive(p: _Proc) -> bool:
     return p.process is not None and p.process.returncode is None
 
 
+def _find_bin(name: str) -> Optional[str]:
+    """node/npm finden - auch wenn der Windows-Dienst (NSSM) kein Node im PATH hat."""
+    import shutil
+    env_override = os.environ.get("MBOX_NODE_BIN") if name == "node" else None
+    if env_override:
+        return env_override
+    found = shutil.which(name)
+    if found:
+        return found
+    if sys.platform == "win32":
+        cands = []
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramW6432")):
+            if base:
+                cands += [Path(base) / "nodejs" / f"{name}.exe", Path(base) / "nodejs" / f"{name}.cmd"]
+        if os.environ.get("APPDATA"):
+            cands.append(Path(os.environ["APPDATA"]) / "npm" / f"{name}.cmd")
+        cands += [Path(r"C:\Program Files\nodejs") / f"{name}.exe", Path(r"C:\Program Files\nodejs") / f"{name}.cmd"]
+        for c in cands:
+            if c.exists():
+                return str(c)
+    else:
+        for c in (f"/usr/local/bin/{name}", f"/usr/bin/{name}", f"/opt/nodejs/bin/{name}"):
+            if Path(c).exists():
+                return c
+    return None
+
+
+_install = {"running": False, "ok": None, "finished_at": None, "output": "", "started_at": None}
+
+
+def service_info() -> dict:
+    return {"service_dir": str(SERVICE_DIR), "installed": (SERVICE_DIR / "node_modules" / "node-opcua").exists(),
+            "node_bin": _find_bin("node"), "npm_bin": _find_bin("npm"), "install": dict(_install)}
+
+
+async def install_dependencies() -> dict:
+    """npm install im mbox_service ausfuehren (Ausgabe nach logs/npm_install.log). Laeuft nur einmal gleichzeitig."""
+    if _install["running"]:
+        return dict(_install)
+    npm = _find_bin("npm")
+    if not npm:
+        _install.update(ok=False, output="npm nicht gefunden - Node.js LTS (22 empfohlen, mind. 20) auf dem Server installieren (https://nodejs.org) und Dienst 'EventenergieBackend' neu starten.",
+                        finished_at=datetime.now(timezone.utc).isoformat())
+        return dict(_install)
+    _install.update(running=True, ok=None, output="", started_at=datetime.now(timezone.utc).isoformat(), finished_at=None)
+    log_path = _log_dir() / "npm_install.log"
+    try:
+        args = [npm, "install", "--no-audit", "--no-fund", "--omit=dev"]
+        kwargs = {}
+        if sys.platform == "win32":
+            args = ["cmd.exe", "/c", *args]  # npm.cmd braucht die Shell
+            kwargs["creationflags"] = 0x08000000
+        proc = await asyncio.create_subprocess_exec(*args, cwd=str(SERVICE_DIR), stdout=asyncio.subprocess.PIPE,
+                                                    stderr=asyncio.subprocess.STDOUT, **kwargs)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=900)
+        text = out.decode("utf-8", "replace")
+        log_path.write_text(f"===== {datetime.now(timezone.utc).isoformat()} rc={proc.returncode}\n{text}", encoding="utf-8")
+        ok = proc.returncode == 0 and (SERVICE_DIR / "node_modules" / "node-opcua").exists()
+        _install.update(ok=ok, output=text[-3000:])
+        logger.info(f"M-Box npm install rc={proc.returncode} ok={ok}")
+    except Exception as e:
+        _install.update(ok=False, output=f"{e}")
+        logger.warning(f"M-Box npm install fehlgeschlagen: {e}")
+    finally:
+        _install.update(running=False, finished_at=datetime.now(timezone.utc).isoformat())
+    if _install["ok"]:
+        for d in await db.devices.find({"device_type": "mbox", "status": {"$ne": "ausser_betrieb"}}, {"_id": 0}).to_list(200):
+            await stop_device(d["id"])
+            _procs.pop(d["id"], None)
+            await sync_device(d)
+    return dict(_install)
+
+
 async def _spawn(device: dict) -> _Proc:
     p = _procs.setdefault(device["id"], _Proc())
     p.last_start_try = time.monotonic()
     log_path = _log_dir() / f"mbox_{re.sub(r'[^A-Za-z0-9_-]', '_', device.get('serial_number') or device['id'])}.log"
     p.log_path = str(log_path)
-    node_bin = os.environ.get("MBOX_NODE_BIN") or "node"
+    node_bin = _find_bin("node") or "node"
     log_file = open(log_path, "ab")
     log_file.write(f"\n===== Start {datetime.now(timezone.utc).isoformat()} port={device.get('mbox_port')} endpoint={device.get('mbox_endpoint')} =====\n".encode())
     log_file.flush()
@@ -222,8 +295,10 @@ async def sync_device(device: Optional[dict]):
 
 
 async def start_all():
-    if not (SERVICE_DIR / "node_modules").exists():
-        logger.warning(f"M-Box: node_modules fehlt in {SERVICE_DIR} - bitte 'npm install' ausfuehren")
+    if not service_info()["installed"]:
+        logger.warning(f"M-Box: node_modules fehlt in {SERVICE_DIR} - versuche npm install automatisch")
+        asyncio.create_task(install_dependencies())  # startet nach Erfolg die Geraete-Dienste selbst
+        return
     devices = await db.devices.find({"device_type": "mbox", "status": {"$ne": "ausser_betrieb"}}, {"_id": 0}).to_list(200)
     for d in devices:
         await sync_device(d)
@@ -330,12 +405,33 @@ async def list_mbox_devices(user: dict = Depends(get_user)):
     }
 
 
+@router.get("/service/info")
+async def mbox_service_info(user: dict = Depends(get_user)):
+    _require(user, "admin")
+    return service_info()
+
+
+@router.post("/service/install")
+async def mbox_service_install(user: dict = Depends(get_user)):
+    """Node-Pakete des M-Box Dienstes auf dem Server installieren (npm install) - fuer Admins per Klick."""
+    _require(user, "admin")
+    if _install["running"]:
+        return {"ok": None, **service_info()}
+    task = asyncio.create_task(install_dependencies())
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=100)
+    except asyncio.TimeoutError:
+        pass  # laeuft im Hintergrund weiter, Frontend fragt /service/info nach
+    return {"ok": _install["ok"], **service_info()}
+
+
 @router.get("/{device_id}/status")
 async def mbox_status(device_id: str, user: dict = Depends(get_user)):
     await _allow(user, "lesen", device_id)
     device = await _device(device_id)
+    svc = service_info()
     return {"level": mbox_level(user), "device": _public(device), "runtime": runtime_status(device),
-            "service_installed": (SERVICE_DIR / "node_modules").exists()}
+            "service_installed": svc["installed"], "service": svc if mbox_level(user) == "admin" else None}
 
 
 @router.post("/{device_id}/lesen")

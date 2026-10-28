@@ -20,6 +20,13 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Live: „Node-Abhängigkeiten fehlen" – Selbstheilung)
+- Live-Fehler „Auf dem Server fehlen die Node-Abhängigkeiten des M-Box Dienstes": `node_modules` in `backend/mbox_service` fehlte (npm install in update-live.ps1 nicht gelaufen/gescheitert oder npm nicht im PATH).
+- `routes/mbox.py`: `_find_bin()` sucht node/npm auch unter `%ProgramFiles%\nodejs` (NSSM-Dienst ohne PATH); `install_dependencies()` führt `npm install --omit=dev` aus (Windows via `cmd /c`, Log `mbox_service/logs/npm_install.log`), startet danach alle Geräte-Dienste; `start_all()` installiert beim Backend-Start automatisch, wenn node-opcua fehlt. Neue Admin-Routen `GET /api/mbox/service/info`, `POST /api/mbox/service/install` (wartet bis 100 s, läuft sonst im Hintergrund weiter). Status liefert `service` (Ordner, node/npm-Pfad, Install-Status) für Admins.
+- `MBoxPage.jsx`: Hinweis zeigt Ordner + gefundenes node/npm + letzten Fehler, Button „Jetzt installieren" (Admin); ohne npm: Anleitung Node 22 LTS installieren.
+- `update-live.ps1`: npm-Fallback-Pfade, Exit-Code-Prüfung, roter FEHLER statt „OK" wenn `node_modules\node-opcua` fehlt. Hinweis: node-opcua-xml2json verlangt Node ≥ 22.13 → Live Node 22 LTS empfohlen.
+- Geprüft im Preview: node_modules entfernt → `/service/install` → ok=True, beide Geräte-Dienste neu gestartet; 40 Pi/Kunden-Tests grün.
+
 ### 2026-06 (Durchsagen: Einmal/Schleife/Stopp, Masten-Auswahl, Timer, Kundensuche, Kundenansicht-Fix)
 - `routes/mbox_audio.py`: `POST …/audio/{id}/play` body `{loop, device_ids}` (leer = alle; fremde IDs ignoriert → 409 wenn nichts übrig), `POST …/audio/stop` body `{device_ids}`; `_group_play()` gemeinsam für manuell + Timer. **Timer** (`mbox_order_timers`): `POST …/audio/{id}/timers` {time HH:MM, days [0-6] leer=täglich | date einmalig, loop, device_ids}, `PATCH/DELETE …/timers/{tid}`, `POST …/timers/{tid}/run-now` (Jetzt testen). Scheduler `timer_loop()` (server.py startup, alle 10 s, Europe/Berlin, `last_fired`-Claim gegen Doppelstart, einmalige Timer deaktivieren sich, Ergebnis in `last_result`), feuert nur bei heute aktivem Auftrag. Timer werden mit der Datei gelöscht. List liefert `timers`, `phase` (active/upcoming/past/unknown).
 - Kunde: `_order_access(need_active)` – Upload/Vorhören/Timer anlegen auch **vor Lieferung**, Play/Stop/Run-now nur active. `customer_orders(upcoming=True)` → `/mbox/my/orders` mit `active`-Flag; Hub-Kachel erscheint damit auch für kommende Aufträge.

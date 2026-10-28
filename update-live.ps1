@@ -183,14 +183,28 @@ if (-not $SkipBackend) {
     # M-Box Lichtmast: Node-Abhaengigkeiten des OPC-UA-Dienstes (wird vom Backend pro Geraet gestartet)
     $MBoxDir = Join-Path $BackendDir "mbox_service"
     if (Test-Path (Join-Path $MBoxDir "package.json")) {
-        if (Get-Command npm -ErrorAction SilentlyContinue) {
-            Log "  M-Box: npm install (mbox_service)..."
+        # npm finden - auch wenn PATH der (Admin-)PowerShell Node noch nicht kennt
+        $NpmCmd = $null
+        $npmInPath = Get-Command npm -ErrorAction SilentlyContinue
+        if ($npmInPath) { $NpmCmd = $npmInPath.Source }
+        foreach ($cand in @("$env:ProgramFiles\nodejs\npm.cmd", "${env:ProgramFiles(x86)}\nodejs\npm.cmd", "$env:APPDATA\npm\npm.cmd")) {
+            if (-not $NpmCmd -and $cand -and (Test-Path $cand)) { $NpmCmd = $cand }
+        }
+        if ($NpmCmd) {
+            Log "  M-Box: npm install (mbox_service) mit $NpmCmd ..."
             Push-Location $MBoxDir
-            npm install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
+            & $NpmCmd install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
+            $npmRc = $LASTEXITCODE
             Pop-Location
-            Log "  M-Box Node-Pakete OK"
+            if ($npmRc -eq 0 -and (Test-Path (Join-Path $MBoxDir "node_modules\node-opcua"))) {
+                Log "  M-Box Node-Pakete OK"
+            } else {
+                Log "  FEHLER: npm install fuer M-Box fehlgeschlagen (rc=$npmRc) - M-Box Dienst startet nicht. Details oben im Log." "Red"
+                Log "         Manuell: cd $MBoxDir ; npm install --omit=dev   (oder im Portal auf der M-Box-Seite 'Jetzt installieren')" "Red"
+            }
         } else {
-            Log "  WARNUNG: npm nicht gefunden - M-Box Dienst kann nicht starten (Node.js LTS >= 20 installieren)" "Yellow"
+            Log "  WARNUNG: npm nicht gefunden - M-Box Dienst kann nicht starten." "Yellow"
+            Log "           Node.js LTS 22 installieren: https://nodejs.org (winget install OpenJS.NodeJS.LTS), danach Update erneut ausfuehren." "Yellow"
         }
     }
 } else {

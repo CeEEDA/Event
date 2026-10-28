@@ -16,7 +16,7 @@ Browser ──HTTPS/JWT──▶ Caddy ──/api/mbox/*──▶ FastAPI (route
 - Caddy braucht **keine** Änderung (alles läuft über `/api`).
 
 ## Installation / Update
-1. Node.js LTS ≥ 20 auf dem Server (prüfen: `node --version`).
+1. Node.js LTS auf dem Server (22 empfohlen, mind. 20; prüfen: `node --version`). `winget install OpenJS.NodeJS.LTS`, danach Dienst `EventenergieBackend` neu starten (PATH).
 2. `update.bat` ausführen – `update-live.ps1` macht jetzt zusätzlich `npm install` in `backend\mbox_service`.
 3. Netzwerk: `Test-NetConnection 192.168.0.100 -Port 4840` muss `TcpTestSucceeded : True` liefern.
 4. Geräteverwaltung → Neues Gerät → Typ **M-Box** → SPS-Adresse `opc.tcp://<IP>:4840`, Security (Test: None/None), optional OPC-UA-Benutzer.
@@ -39,7 +39,7 @@ Rate-Limit: 30 schreibende Befehle/min je Benutzer+Gerät. Jeder Schreibzugriff 
 5. Netz zum Mast kurz trennen → „keine Verbindung", danach automatisch wieder da.
 
 ## Fehlersuche
-- „Dienst aus" auf der Karte / `service_installed:false` → `npm install` in `backend\mbox_service` fehlt.
+- „Dienst aus" auf der Karte / `service_installed:false` → Node-Pakete fehlen. Das Backend installiert sie beim Start automatisch (wenn npm gefunden wird); sonst auf der M-Box-Seite „Jetzt installieren" (Admin) oder `cd backend\mbox_service ; npm install --omit=dev`. Ausgabe: `mbox_service\logs\npm_install.log`. Der Hinweis zeigt Ordner sowie gefundenes node/npm.
 - `Zeitüberschreitung: Verbinden` → Port 4840 nicht erreichbar / OPC-UA-Server in TIA aus / Lizenz.
 - `BadSecurityPolicyRejected` / `BadIdentityTokenRejected` → Security/Benutzer im Gerät passt nicht zu TIA.
 - Nach TIA-Änderung der Schnittstelle: Admin → Schraubenschlüssel (Dienst neu starten) oder `POST /api/mbox/<id>/neu_verbinden`.

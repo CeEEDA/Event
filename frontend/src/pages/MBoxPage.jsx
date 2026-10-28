@@ -86,7 +86,30 @@ export default function MBoxPage() {
   if (!darf && level !== "none") hinweise.push(["warn", "Du hast nur Lese-Zugriff: Status ist sichtbar, Schalten ist gesperrt."]);
   if (kunde) hinweise.push(["info", "Sie können an diesem Lichtmast die Beleuchtung schalten und Durchsagen abspielen. Generator, Netz und Einstellungen betreut Eventenergie."]);
   if (info?.error) hinweise.push(["err", info.error]);
-  if (info && info.service_installed === false) hinweise.push(["err", "Auf dem Server fehlen die Node-Abhängigkeiten des M-Box Dienstes (npm install in backend/mbox_service)."]);
+  const svc = info?.service;
+  if (info && info.service_installed === false) {
+    const inst = svc?.install;
+    const detail = svc ? ` Ordner: ${svc.service_dir} · node: ${svc.node_bin || "nicht gefunden"} · npm: ${svc.npm_bin || "nicht gefunden"}.` : "";
+    const status = inst?.running ? " Installation läuft gerade…" : inst?.ok === false ? ` Letzter Versuch fehlgeschlagen: ${(inst.output || "").trim().split("\n").slice(-3).join(" ")}` : "";
+    hinweise.push(["err", <span data-testid="mbox-service-missing">
+      Auf dem Server fehlen die Node-Pakete des M-Box Dienstes (express / node-opcua).{detail}{status}
+      {level === "admin" && svc?.npm_bin && !inst?.running && (
+        <button type="button" onClick={installieren} className="ml-2 underline font-semibold hover:text-red-900" data-testid="mbox-service-install-btn">Jetzt installieren</button>
+      )}
+      {level === "admin" && !svc?.npm_bin && <span className="block mt-1">Node.js LTS (22 empfohlen, mind. 20) von nodejs.org auf dem Server installieren, danach den Dienst „EventenergieBackend“ neu starten – die Pakete werden dann automatisch installiert.</span>}
+    </span>]);
+  }
+
+  async function installieren() {
+    toast.info("npm install läuft – das kann 1–3 Minuten dauern…");
+    try {
+      const r = await api.post("/mbox/service/install");
+      if (r.data.ok === true) toast.success("Node-Pakete installiert – M-Box Dienste werden gestartet");
+      else if (r.data.ok === false) toast.error("Installation fehlgeschlagen – Details im Hinweis / logs/npm_install.log");
+      else toast.info("Installation läuft noch im Hintergrund – Seite gleich aktualisieren");
+    } catch (e) { toast.error(e.response?.data?.detail || "Installation fehlgeschlagen"); }
+    setTimeout(aktualisieren, 2000);
+  }
 
   const restart = async () => {
     if (!(await confirm("M-Box Dienst dieses Masts neu starten? Die Verbindung zur SPS wird kurz unterbrochen."))) return;
