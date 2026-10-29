@@ -113,6 +113,7 @@ class _Proc:
         self.restarts = 0
         self.last_start_try = 0.0
         self.log_path = None
+        self.last_error = None
 
 
 _procs: dict[str, _Proc] = {}
@@ -272,7 +273,17 @@ async def ensure_running(device: dict) -> _Proc:
             if time.monotonic() - p.last_start_try < 5:
                 raise HTTPException(status_code=503, detail="M-Box Dienst startet gerade neu, bitte kurz warten")
             p.restarts += 1
-        return await _spawn(device)
+        try:
+            return await _spawn(device)
+        except HTTPException:
+            raise
+        except Exception as e:
+            # z.B. node nicht gefunden (FileNotFoundError) oder Subprozess auf dieser Plattform nicht moeglich -> kein 500
+            p = _procs.setdefault(device["id"], _Proc())
+            p.last_error = f"{type(e).__name__}: {e}"
+            logger.warning(f"M-Box Dienst {device.get('serial_number')} konnte nicht gestartet werden: {p.last_error}")
+            raise HTTPException(status_code=503, detail=f"M-Box Dienst konnte nicht gestartet werden: {p.last_error}. "
+                                f"node: {_find_bin('node') or 'nicht gefunden'} - Node.js installieren bzw. Backend-Dienst neu starten.")
 
 
 async def stop_device(device_id: str):
@@ -327,6 +338,7 @@ def runtime_status(device: dict) -> dict:
         "restarts": p.restarts if p else 0,
         "port": device.get("mbox_port"),
         "exit_code": (p.process.returncode if p and p.process else None),
+        "last_error": p.last_error if p else None,
     }
 
 

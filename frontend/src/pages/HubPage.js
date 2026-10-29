@@ -185,10 +185,12 @@ export default function HubPage() {
     // Info-Posts der Admins
     loadInfoPosts();
     // HalloPetra offene Anrufe (nur wenn Modul aktiv)
+    let petraErlaubt = true; // nach 403 (kein Telefon-Modul) nicht weiter pollen
     const loadPetra = () => {
+      if (!petraErlaubt) return;
       api.get(`/hallopetra/calls?token=${token}&limit=1&only_open=true`)
         .then(r => setPetraOpen(r.data.open || 0))
-        .catch(() => setPetraOpen(0));
+        .catch(e => { if (e.response?.status === 403) petraErlaubt = false; setPetraOpen(0); });
     };
     loadPetra();
     // Load own avatar

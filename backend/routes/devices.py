@@ -655,13 +655,21 @@ async def get_device_image(device_id: str, thumbnail: int = 0, size: int = 200):
     if not device or not device.get("image_gridfs_id"):
         raise HTTPException(status_code=404, detail="Kein Bild vorhanden")
 
-    grid_out = await fs.open_download_stream(device["image_gridfs_id"])
-    content = await grid_out.read()
+    try:
+        grid_out = await fs.open_download_stream(device["image_gridfs_id"])
+        content = await grid_out.read()
+    except Exception:
+        # Bild-Referenz zeigt ins Leere (GridFS-Datei fehlt) -> 404 statt 500, Referenz bereinigen
+        await db.devices.update_one({"id": device_id}, {"$unset": {"image_gridfs_id": "", "image_filename": "", "image_content_type": ""}})
+        raise HTTPException(status_code=404, detail="Bilddatei nicht mehr vorhanden")
 
     # Thumbnail for list views
     if thumbnail:
         from utils.thumbnails import make_thumbnail_from_bytes
-        tdata = make_thumbnail_from_bytes(content, size=min(max(int(size), 16), 1024))
+        try:
+            tdata = make_thumbnail_from_bytes(content, size=min(max(int(size), 16), 1024))
+        except Exception:
+            tdata = None  # defektes/unbekanntes Bildformat -> Original ausliefern
         if tdata is not None:
             return Response(
                 content=tdata,

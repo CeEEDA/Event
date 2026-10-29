@@ -239,6 +239,18 @@ async def get_all_employees(token: str = Query(...)):
     return result
 
 
+@router.get("/avatars")
+async def get_avatars(token: str = Query(...), ids: str = Query("")):
+    """Avatar-Pfade mehrerer Nutzer auf einmal (fuer Chat) - jeder eingeloggte Nutzer, kein Admin noetig."""
+    await _get_user(token)
+    wanted = [i for i in ids.split(",") if i][:200]
+    if not wanted:
+        return {}
+    rows = await db.employee_profiles.find({"user_id": {"$in": wanted}, "avatar_path": {"$nin": [None, ""]}},
+                                           {"_id": 0, "user_id": 1, "avatar_path": 1}).to_list(200)
+    return {r["user_id"]: r["avatar_path"] for r in rows}
+
+
 @router.get("/profile/{user_id}")
 async def get_profile_by_id(user_id: str, token: str = Query(...)):
     """Admin: get any user's profile."""

@@ -93,23 +93,26 @@ export default function ChatPage() {
     };
   }, []);
 
+  const avatarGefragt = useRef(new Set());
+  const loadAvatars = useCallback((ids) => {
+    const neu = [...new Set(ids)].filter(id => !avatarGefragt.current.has(id));
+    if (!neu.length) return;
+    neu.forEach(id => avatarGefragt.current.add(id));
+    api.get(`/employee/avatars?token=${token}&ids=${neu.join(",")}`).then(r => {
+      const add = {};
+      Object.entries(r.data || {}).forEach(([uid, p]) => { add[uid] = `${API}/api/employee/avatar/${uid}?token=${token}&_=${p}`; });
+      if (Object.keys(add).length) setMemberAvatars(prev => ({ ...prev, ...add }));
+    }).catch(() => {});
+  }, [token]);
+
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await api.get(`/chat/conversations?token=${token}`);
       setConversations(res.data);
-      // Load avatars for DM partners
-      res.data.forEach(c => {
-        if (c.type === "direct") {
-          const partnerId = c.members?.find(id => id !== user?.id);
-          if (partnerId && !memberAvatars[partnerId]) {
-            api.get(`/employee/profile/${partnerId}?token=${token}`).then(r => {
-              if (r.data.avatar_path) {
-                setMemberAvatars(prev => ({ ...prev, [partnerId]: `${API}/api/employee/avatar/${partnerId}?token=${token}&_=${r.data.avatar_path}` }));
-              }
-            }).catch(() => {});
-          }
-        }
-      });
+      // Avatare der DM-Partner gesammelt laden (ein Request, kein Admin noetig)
+      const partnerIds = res.data.filter(c => c.type === "direct").map(c => c.members?.find(id => id !== user?.id)).filter(Boolean);
+      loadAvatars(partnerIds);
     } catch {}
   }, [token, user?.id]);
 
@@ -117,19 +120,9 @@ export default function ChatPage() {
     try {
       const res = await api.get(`/chat/conversations/${convId}/messages?token=${token}`);
       setMessages(res.data);
-      // Load unique sender avatars
-      const senderIds = [...new Set(res.data.map(m => m.sender_id).filter(Boolean))];
-      senderIds.forEach(sid => {
-        if (!memberAvatars[sid]) {
-          api.get(`/employee/profile/${sid}?token=${token}`).then(r => {
-            if (r.data.avatar_path) {
-              setMemberAvatars(prev => ({ ...prev, [sid]: `${API}/api/employee/avatar/${sid}?token=${token}&_=${r.data.avatar_path}` }));
-            }
-          }).catch(() => {});
-        }
-      });
+      loadAvatars(res.data.map(m => m.sender_id).filter(Boolean));
     } catch {}
-  }, [token, memberAvatars]);
+  }, [token, user?.id, loadAvatars]);
 
   useEffect(() => {
     loadConversations();
@@ -191,19 +184,9 @@ export default function ChatPage() {
     try {
       const res = await api.get(`/chat/conversations/${activeConvo.id}/messages?token=${token}&parent_id=${msgId}`);
       setThreadReplies(res.data || []);
-      // sender avatars
-      const senderIds = [...new Set((res.data || []).map(m => m.sender_id).filter(Boolean))];
-      senderIds.forEach(sid => {
-        if (!memberAvatars[sid]) {
-          api.get(`/employee/profile/${sid}?token=${token}`).then(r => {
-            if (r.data.avatar_path) {
-              setMemberAvatars(prev => ({ ...prev, [sid]: `${API}/api/employee/avatar/${sid}?token=${token}&_=${r.data.avatar_path}` }));
-            }
-          }).catch(() => {});
-        }
-      });
+      loadAvatars((res.data || []).map(m => m.sender_id).filter(Boolean));
     } catch {}
-  }, [activeConvo, token, memberAvatars]);
+  }, [activeConvo, token, loadAvatars]);
 
   const toggleThread = (msgId) => {
     if (openThreadId === msgId) {

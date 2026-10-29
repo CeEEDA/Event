@@ -12,8 +12,10 @@ export function useMBox(deviceId, seite) {
   const seiteRef = useRef(seite);
   seiteRef.current = seite;
 
+  const gestoppt = useRef(false); // nach 403/404 nicht weiter pollen (Zugriff fehlt / Geraet weg)
+
   const aktualisieren = useCallback(async () => {
-    if (laeuft.current || !deviceId) return;
+    if (laeuft.current || !deviceId || gestoppt.current) return;
     laeuft.current = true;
     try {
       const r = await api.post(`/mbox/${deviceId}/lesen`, { namen: [...BASIS, ...(EXTRA[seiteRef.current] || [])] }, { timeout: 30000 });
@@ -25,7 +27,9 @@ export function useMBox(deviceId, seite) {
       setVerbindung({ ok: true, text: "Stand " + new Date().toLocaleTimeString("de-DE"), detail: "letzte erfolgreiche Abfrage" });
     } catch (e) {
       const msg = e.response?.data?.detail || e.message;
-      setVerbindung({ ok: false, text: e.response?.status === 403 ? "kein Zugriff" : "Dienst nicht erreichbar", detail: msg });
+      const st = e.response?.status;
+      if (st === 403 || st === 404) gestoppt.current = true;
+      setVerbindung({ ok: false, text: st === 403 ? "kein Zugriff" : st === 404 ? "Gerät nicht gefunden" : "Dienst nicht erreichbar", detail: msg });
     } finally {
       laeuft.current = false;
     }
@@ -33,11 +37,14 @@ export function useMBox(deviceId, seite) {
 
   useEffect(() => {
     if (!deviceId) return;
+    gestoppt.current = false;
+    let t = null;
     const lade = () => api.get(`/mbox/${deviceId}/status`).then(r => setInfo(r.data)).catch(e => {
+      if (e.response?.status === 403 || e.response?.status === 404) { gestoppt.current = true; if (t) clearInterval(t); }
       setInfo(prev => prev && !prev.error ? prev : { error: e.response?.data?.detail || "Status nicht ladbar", level: "none" });
     });
     lade();
-    const t = setInterval(lade, 10000);
+    t = setInterval(lade, 10000);
     return () => clearInterval(t);
   }, [deviceId]);
 
