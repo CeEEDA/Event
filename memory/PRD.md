@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Live: NotImplementedError beim Start des M-Box Node-Dienstes)
+- Ursache: Auf dem Windows-Live-Server laeuft uvicorn mit der WindowsSelectorEventLoop (uvicorn setzt sie bei --workers/--reload) -> `asyncio.create_subprocess_exec` wirft `NotImplementedError`. Fix in `routes/mbox.py`: Node-Prozesse per `subprocess.Popen` (loop-unabhaengig), `_proc_alive` via `poll()`, `_kill` wartet in `asyncio.to_thread`, npm install via `asyncio.to_thread(subprocess.run)`. Keine asyncio-Subprozesse mehr im Backend. Preview: Dienste laufen (pid), 40 Tests gruen.
+
 ### 2026-06 (Caddy-Access-Log Live 27.-29.10. ausgewertet, 68.876 Requests)
 - Befunde: (1) `POST /api/mbox/<id>/lesen` 287x **500** + 18x `befehl/Lampe_Umschalten` 500 in ~5 ms -> unbehandelte Exception beim Starten des Node-Dienstes (node nicht im PATH / node_modules fehlten). Fix: `ensure_running()` faengt Spawn-Fehler -> 503 mit Klartext (node-Pfad), `_Proc.last_error` im Runtime-Status. (2) `lesen` 2.951x **403** "Kein Zugriff auf M-Box": Mitarbeiter ohne M-Box-Recht hatte die Seite 2 h offen, Polling alle 2 s. Fix: `useMBox.js` stoppt Polling nach 403/404. (3) `/api/hallopetra/calls` 3.655x 403: Hub pollte alle 10 s auch ohne Telefon-Modul. Fix: HubPage stoppt nach 403. (4) `/api/employee/profile/<fremde id>` 1.175x 403: ChatPage holte Avatare fremder Nutzer ueber Admin-Route. Fix: neue Route `GET /api/employee/avatars?ids=a,b` (jeder eingeloggte Nutzer, Batch) + `loadAvatars()` in ChatPage. (5) `/api/devices/<id>/image` 25x 500: GridFS-Referenz zeigt ins Leere / Thumbnail-Fehler. Fix: 404 + Referenz bereinigen, Thumbnail-Fehler -> Original. (6) 60x 502 = Backend-Neustarts bei Updates (06h/08h), 46x Status 0 = Client-Abbruch, 405 auf /wp-json, /index.php, /xmlrpc.php = Bot-Scans (harmlos, Caddy blockt). Keine Hinweise auf Angriffe mit Erfolg.
 

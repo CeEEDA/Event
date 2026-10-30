@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 import uuid
@@ -147,7 +148,7 @@ def _env_for(device: dict) -> dict:
 
 
 def _proc_alive(p: _Proc) -> bool:
-    return p.process is not None and p.process.returncode is None
+    return p.process is not None and p.process.poll() is None
 
 
 def _find_bin(name: str) -> Optional[str]:
@@ -202,10 +203,10 @@ async def install_dependencies() -> dict:
         if sys.platform == "win32":
             args = ["cmd.exe", "/c", *args]  # npm.cmd braucht die Shell
             kwargs["creationflags"] = 0x08000000
-        proc = await asyncio.create_subprocess_exec(*args, cwd=str(SERVICE_DIR), stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.STDOUT, **kwargs)
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=900)
-        text = out.decode("utf-8", "replace")
+        # subprocess.run im Thread: funktioniert mit jeder Event-Loop (Windows-SelectorLoop kann keine asyncio-Subprozesse)
+        proc = await asyncio.to_thread(subprocess.run, args, cwd=str(SERVICE_DIR), stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT, timeout=900, **kwargs)
+        text = proc.stdout.decode("utf-8", "replace")
         log_path.write_text(f"===== {datetime.now(timezone.utc).isoformat()} rc={proc.returncode}\n{text}", encoding="utf-8")
         ok = proc.returncode == 0 and (SERVICE_DIR / "node_modules" / "node-opcua").exists()
         _install.update(ok=ok, output=text[-3000:])
@@ -235,11 +236,14 @@ async def _spawn(device: dict) -> _Proc:
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-    p.process = await asyncio.create_subprocess_exec(
-        node_bin, "server.js", cwd=str(SERVICE_DIR), env=_env_for(device),
-        stdout=log_file, stderr=asyncio.subprocess.STDOUT, **kwargs,
-    )
-    log_file.close()
+    # subprocess.Popen statt asyncio-Subprozess: laeuft auch unter der Windows-SelectorEventLoop (uvicorn --workers)
+    try:
+        p.process = subprocess.Popen(
+            [node_bin, "server.js"], cwd=str(SERVICE_DIR), env=_env_for(device),
+            stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs,
+        )
+    finally:
+        log_file.close()
     p.config_sig = _config_sig(device)
     p.started_at = datetime.now(timezone.utc).isoformat()
     logger.info(f"M-Box Dienst gestartet: {device.get('serial_number')} pid={p.process.pid} port={device.get('mbox_port')}")
@@ -250,10 +254,11 @@ async def _kill(p: _Proc):
     if _proc_alive(p):
         try:
             p.process.terminate()
-            await asyncio.wait_for(p.process.wait(), timeout=5)
+            await asyncio.to_thread(p.process.wait, 5)
         except Exception:
             try:
                 p.process.kill()
+                await asyncio.to_thread(p.process.wait, 5)
             except Exception:
                 pass
     p.process = None
@@ -337,7 +342,7 @@ def runtime_status(device: dict) -> dict:
         "started_at": p.started_at if p else None,
         "restarts": p.restarts if p else 0,
         "port": device.get("mbox_port"),
-        "exit_code": (p.process.returncode if p and p.process else None),
+        "exit_code": (p.process.poll() if p and p.process else None),
         "last_error": p.last_error if p else None,
     }
 
