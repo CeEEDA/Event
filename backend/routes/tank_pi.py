@@ -23,7 +23,7 @@ logger = logging.getLogger("tank")
 db = None
 decode_jwt_token = None
 
-OFFLINE_AFTER_SEC = 300
+OFFLINE_AFTER_SEC = 1500  # 2,5 Meldeintervalle (10 min) ohne Meldung = offline
 DEFAULT_WARN = 25
 DEFAULT_CRIT = 10
 
@@ -217,7 +217,7 @@ async def tank_ingest(body: TankIngest):
 class TankSetupRequest(BaseModel):
     enable_lte: bool = True
     lte_apn: str = "internet.m2mportal.de"
-    interval: int = 60
+    interval: int = 600
 
 
 @router.post("/{device_id}/pi-setup")

@@ -1041,11 +1041,11 @@ function MBoxPiSetupSection({ device }) {
 function TankPiSetupSection({ device }) {
   const [enableLte, setEnableLte] = useState(true);
   const [lteApn, setLteApn] = useState("internet.m2mportal.de");
-  const [interval, setIntervalSec] = useState(60);
+  const [interval, setIntervalSec] = useState(600);
   const [wgetCommand, setWgetCommand] = useState("");
   const [loading, setLoading] = useState(false);
   const snap = device.latest_snapshot || {};
-  const online = device.tank_pi_last_seen && (Date.now() - new Date(device.tank_pi_last_seen).getTime()) < 300000;
+  const online = device.tank_pi_last_seen && (Date.now() - new Date(device.tank_pi_last_seen).getTime()) < 1500000;
 
   const handleGenerate = async () => {
     if (!window.confirm("Ein neuer Geräteschlüssel für den Tankgeber-Pi wird generiert und in das Setup-Skript eingebettet.\n\nEin bereits installierter Pi muss danach neu eingerichtet werden.\n\nFortfahren?")) return;
@@ -1068,7 +1068,7 @@ function TankPiSetupSection({ device }) {
           {online ? `online · ${snap.fuel_level_pct != null ? Math.round(snap.fuel_level_pct) + " %" : "–"}` : device.device_key_hash || device.tank_pi_last_seen ? "eingerichtet, offline" : "nicht eingerichtet"}
         </span>
       </div>
-      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi + SIM7600-LTE-HAT (Telekom M2M, wie DSE 5510) + Pico am USB (ADC, Geber 0–190 Ω, R_REF 100 Ω). Das Setup flasht MicroPython auf den Pico, lädt das Messprogramm, richtet gpsd/LTE ein und meldet den Füllstand alle {interval} s ans Portal.</p>
+      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi + SIM7600-LTE-HAT (Telekom M2M, wie DSE 5510) + Pico am USB (ADC, Geber 0–190 Ω, R_REF 100 Ω). Das Setup flasht MicroPython auf den Pico, lädt das Messprogramm, richtet gpsd/LTE ein und meldet den Füllstand alle {Math.round(interval / 60)} min ans Portal.</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <label className="flex items-center gap-2 cursor-pointer col-span-1" data-testid="tank-enable-lte">
           <input type="checkbox" checked={enableLte} onChange={e => setEnableLte(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500" />
@@ -1080,7 +1080,7 @@ function TankPiSetupSection({ device }) {
         </div>
         <div>
           <Label className="text-gray-600 text-[11px]">Meldung alle (s)</Label>
-          <Input type="number" min={10} max={3600} value={interval} onChange={e => setIntervalSec(parseInt(e.target.value) || 60)} className="mt-0.5 text-xs h-[30px]" data-testid="tank-interval" />
+          <Input type="number" min={10} max={3600} value={interval} onChange={e => setIntervalSec(parseInt(e.target.value) || 600)} className="mt-0.5 text-xs h-[30px]" data-testid="tank-interval" />
         </div>
       </div>
       {wgetCommand && (

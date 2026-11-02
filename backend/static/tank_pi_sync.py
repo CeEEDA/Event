@@ -27,7 +27,7 @@ def load_conf():
     cp.read(CONF)
     s = cp["tank"]
     return {"api_url": s["api_url"].rstrip("/"), "device_key": s["device_key"], "device_id": s["device_id"],
-            "interval": s.getint("interval", 60), "serial": s.get("serial", "/dev/ttyACM0")}
+            "interval": s.getint("interval", 600), "serial": s.get("serial", "/dev/ttyACM0")}
 
 
 # ---------------- Pico (Tankgeber) ----------------
