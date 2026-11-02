@@ -499,6 +499,23 @@ LOGGER_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "s
 _setup_downloads = {}
 
 
+async def _persist_setup_download(token: str):
+    """Setup-Skript zusaetzlich in Mongo ablegen: ueberlebt Backend-Neustarts und funktioniert mit mehreren Workern."""
+    entry = _setup_downloads.get(token)
+    if not entry or db is None:
+        return
+    doc = dict(entry)
+    if not isinstance(doc.get("created_at"), str):
+        doc["created_at"] = doc["created_at"].isoformat()
+    doc["token"] = token
+    try:
+        await db.setup_downloads.update_one({"token": token}, {"$set": doc}, upsert=True)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        await db.setup_downloads.delete_many({"created_at": {"$lt": cutoff}})
+    except Exception as e:
+        logger.warning(f"Setup-Download konnte nicht persistiert werden: {e}")
+
+
 def _get_api_base(request: Request = None) -> str:
     """Determine the API base URL - always returns a FULL URL with host for Pi configs."""
     # 1. Explicit env var (highest priority)
@@ -890,6 +907,7 @@ fi
         "created_at": datetime.now(timezone.utc),
         "device_name": device_name,
     }
+    await _persist_setup_download(download_token)
 
     # Clean up old tokens (older than 1 hour)
     now = datetime.now(timezone.utc)
@@ -908,6 +926,8 @@ fi
 async def download_setup_script(token: str):
     """Public download endpoint for setup script using a temporary token."""
     entry = _setup_downloads.get(token)
+    if not entry and db is not None:
+        entry = await db.setup_downloads.find_one({"token": token}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="Download-Link abgelaufen oder ungueltig")
 
@@ -917,7 +937,9 @@ async def download_setup_script(token: str):
         created = datetime.fromisoformat(created.replace("Z", "+00:00"))
     age = (datetime.now(timezone.utc) - created).total_seconds()
     if age > 3600:
-        del _setup_downloads[token]
+        _setup_downloads.pop(token, None)
+        if db is not None:
+            await db.setup_downloads.delete_one({"token": token})
         raise HTTPException(status_code=410, detail="Download-Link abgelaufen")
 
     return PlainTextResponse(
@@ -1180,6 +1202,7 @@ echo ""
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
+    await _persist_setup_download(download_token)
 
     download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
 
@@ -1997,6 +2020,7 @@ sudo reboot
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
+    await _persist_setup_download(download_token)
 
     download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
 
@@ -2937,6 +2961,7 @@ sudo reboot
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
+    await _persist_setup_download(download_token)
 
     download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
 

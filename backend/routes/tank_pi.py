@@ -240,6 +240,7 @@ async def tank_pi_setup(device_id: str, request: Request, body: TankSetupRequest
     token = secrets.token_urlsafe(32)
     em._setup_downloads[token] = {"script": script, "device_id": device_id, "created_at": datetime.now(timezone.utc).isoformat(),
                                   "device_name": device.get("serial_number")}
+    await em._persist_setup_download(token)
     return {"download_url": f"{api_url}/energy-monitoring/setup-download/{token}", "device_id": device_id,
             "message": f"Tankgeber-Setup generiert fuer {device.get('serial_number', '')}"}
 
