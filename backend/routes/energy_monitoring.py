@@ -2209,22 +2209,27 @@ nmcli connection reload 2>/dev/null || true
 # --- 3g: GPS aktivieren + gpsd neu konfigurieren mit LTE-GPS ---
 echo "  GPS + gpsd fuer SIM7600 konfigurieren..."
 
-# GPS-Port per NMEA-Verifikation erneut suchen (SIM7600 USB-Ports jetzt aktiv)
-LTE_GPS_PORT=""
-for port in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4; do
-    [ -e "$port" ] || continue
-    if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
-        LTE_GPS_PORT="$port"
-        break
-    fi
-done
-[ -z "$LTE_GPS_PORT" ] && LTE_GPS_PORT="$GPS_DEV"  # Fallback auf Schritt-2-Ergebnis
-echo "  GPS-NMEA verifiziert auf: $LTE_GPS_PORT"
+# SIM7600: feste USB-Schnittstellen if01 = NMEA (GPS), if02 = AT, if03 = Modem/PPP -> stabiler by-id-Name statt ttyUSBx
+LTE_GPS_PORT=$(ls /dev/serial/by-id/usb-SimTech*-if01-port0 2>/dev/null | head -n1)
+if [ -n "$LTE_GPS_PORT" ]; then
+    echo "  GPS-NMEA-Port (SIM7600 by-id): $LTE_GPS_PORT"
+else
+    # Kein by-id-Name: per NMEA-Verifikation suchen (AT-Port ttyUSB2 zuletzt, nie als Fallback)
+    for port in /dev/ttyUSB1 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB2; do
+        [ -e "$port" ] || continue
+        if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
+            LTE_GPS_PORT="$port"
+            break
+        fi
+    done
+    [ -z "$LTE_GPS_PORT" ] && LTE_GPS_PORT="${{GPS_DEV:-/dev/ttyUSB1}}"  # Fallback: Schritt-2-Ergebnis bzw. USB1
+    echo "  GPS-NMEA verifiziert auf: $LTE_GPS_PORT"
+fi
 
 sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
 #!/bin/bash
-# AT-Port suchen (der erste der AT OK antwortet)
-for AT_PORT in /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB2; do
+# AT-Port suchen: SIM7600 by-id (if02) zuerst, sonst der erste der mit OK antwortet
+for AT_PORT in $(ls /dev/serial/by-id/usb-SimTech*-if02-port0 2>/dev/null) /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4; do
     [ -e "$AT_PORT" ] || continue
     /usr/bin/lsof "$AT_PORT" >/dev/null 2>&1 && continue
     stty -F "$AT_PORT" 115200 raw -echo 2>/dev/null

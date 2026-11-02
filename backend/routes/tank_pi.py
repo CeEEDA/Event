@@ -408,33 +408,42 @@ TESTDATEN=$(timeout 5 cat "$PICO_PORT" 2>/dev/null | grep "{{" | tail -n 1 || tr
 # ===== SCHRITT 3: GPS (SIM7600 NMEA -> gpsd) =====
 echo ""
 echo "[3/{total}] GPS konfigurieren..."
+# SIM7600 (1e0e:9001) hat feste USB-Schnittstellen: if01 = NMEA (GPS), if02 = AT-Befehle, if03 = Modem/PPP.
+# Wir nehmen die stabilen /dev/serial/by-id-Namen - ttyUSBx kann nach einem Neustart wandern.
+SIM_NMEA=$(ls /dev/serial/by-id/usb-SimTech*-if01-port0 2>/dev/null | head -n1)
+SIM_AT=$(ls /dev/serial/by-id/usb-SimTech*-if02-port0 2>/dev/null | head -n1)
 if lsusb | grep -q "1e0e:9001"; then
-    for at in /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1; do
+    for at in $SIM_AT /dev/ttyUSB2 /dev/ttyUSB3; do
         [ -e "$at" ] || continue
         stty -F "$at" 115200 raw -echo 2>/dev/null || continue
-        (echo -ne "AT+CGPS=1\\r\\n" > "$at") &
+        (echo -ne "AT+CGPS=1\r\n" > "$at") &
         if timeout 2 head -c 200 "$at" 2>/dev/null | grep -qE "OK|CGPS|ERROR"; then
-            wait; (echo -ne "AT+CGPSAUTO=1\\r\\n" > "$at") & timeout 2 head -c 100 "$at" >/dev/null 2>&1; wait 2>/dev/null
+            wait; (echo -ne "AT+CGPSAUTO=1\r\n" > "$at") & timeout 2 head -c 100 "$at" >/dev/null 2>&1; wait 2>/dev/null
             echo "  SIM7600 GPS aktiviert ueber $at"; break
         fi
         wait 2>/dev/null
     done
     sleep 5
 fi
-# NMEA-Port suchen (ttyACM = Pico wird ausgelassen)
 GPS_DEV=""
-for attempt in 1 2 3; do
-    for port in /dev/ttyUSB2 /dev/ttyUSB1 /dev/ttyUSB0 /dev/ttyUSB3 /dev/ttyUSB4; do
-        [ -e "$port" ] || continue
-        for baud in 115200 9600; do
-            stty -F "$port" $baud raw -echo 2>/dev/null || continue
-            if timeout 4 cat "$port" 2>/dev/null | grep -qE '^\\$(GP|GN|GL|BD)'; then GPS_DEV="$port"; break 2; fi
+if [ -n "$SIM_NMEA" ]; then
+    GPS_DEV="$SIM_NMEA"
+    echo "  SIM7600 NMEA-Port (by-id): $GPS_DEV"
+else
+    # Kein SIM7600 erkannt: NMEA-Port suchen (ttyACM = Pico wird ausgelassen, ttyUSB2 = AT-Port zuletzt)
+    for attempt in 1 2 3; do
+        for port in /dev/ttyUSB1 /dev/ttyUSB0 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB2; do
+            [ -e "$port" ] || continue
+            for baud in 115200 9600; do
+                stty -F "$port" $baud raw -echo 2>/dev/null || continue
+                if timeout 4 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)'; then GPS_DEV="$port"; break 2; fi
+            done
         done
+        [ -n "$GPS_DEV" ] && break
+        sleep 4
     done
-    [ -n "$GPS_DEV" ] && break
-    sleep 4
-done
-[ -z "$GPS_DEV" ] && GPS_DEV="/dev/ttyUSB2" && echo "  Kein NMEA gefunden - Fallback $GPS_DEV"
+    [ -z "$GPS_DEV" ] && GPS_DEV="/dev/ttyUSB1" && echo "  Kein NMEA gefunden - Fallback $GPS_DEV (SIM7600: USB1 = NMEA)"
+fi
 tee /etc/default/gpsd > /dev/null << GPSD
 START_DAEMON="true"
 USBAUTO="false"
