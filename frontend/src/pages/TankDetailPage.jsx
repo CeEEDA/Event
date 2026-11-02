@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Fuel, Droplets, Satellite, AlertTriangle, Calendar, Cpu } from "lucide-react";
+import { ArrowLeft, RefreshCw, Fuel, Droplets, AlertTriangle, Calendar, Cpu, MapPin } from "lucide-react";
+import L from "leaflet";
+import { MapContainer, Marker } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { toast } from "sonner";
 import { Logo } from "../components/Logo";
 import { Button } from "../components/ui/button";
 import api from "../lib/api";
-import { MBoxStandortKarte } from "../components/mbox/MBoxStandortKarte";
 
 const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–";
 
@@ -128,14 +130,28 @@ export default function TankDetailPage() {
             </div>
           </div>
           <div className="space-y-4">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden" data-testid="tank-map">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2"><MapPin className="w-4 h-4 text-fuchsia-500" /> Standort</h2>
+                {position && <span className="text-[11px] text-gray-400">{position[0].toFixed(5)}, {position[1].toFixed(5)}</span>}
+              </div>
+              {position ? (
+                <div style={{ height: 220 }}>
+                  <MapContainer center={position} zoom={14} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
+                    <MapTileLayer />
+                    <Marker position={position} icon={L.divIcon({ className: "custom-marker", html: '<div style="width:16px;height:16px;background:#A855F7;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>', iconSize: [16, 16], iconAnchor: [8, 8] })} />
+                  </MapContainer>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 px-4 py-8 text-center">Noch keine GPS-Position – das LTE-HAT braucht unter freiem Himmel einige Minuten für den ersten Fix.</p>
+              )}
+              <p className="text-[11px] text-gray-400 px-4 py-2 border-t border-gray-100">{gps?.fix ? `GPS-Fix (Modus ${gps.mode})${gps.ts ? " · " + fmtTime(gps.ts) : ""}` : position ? "letzte bekannte Position (aktuell kein Fix)" : "LTE-HAT GPS"}</p>
+            </div>
             <Kachel icon={Droplets} label="Letzte Messung" value={fmtTime(tank.measured_at)} sub={online ? "Pi meldet regelmäßig" : "Pi offline"} testId="tank-measured" />
-            <Kachel icon={Satellite} label="GPS" value={gps?.fix ? `${Number(gps.lat).toFixed(5)}, ${Number(gps.lon).toFixed(5)}` : "kein Fix"} sub={gps?.fix ? `Modus ${gps.mode}${gps.ts ? " · " + fmtTime(gps.ts) : ""}` : "LTE-HAT GPS"} testId="tank-gps" />
             <Kachel icon={Cpu} label="Pi" value={online ? "online" : "offline"} sub={`v${tank.pi?.version || "–"}${health.ppp0 != null ? ` · LTE ${health.ppp0 ? "verbunden" : "aus"}` : ""}${health.cpu_temp_c ? ` · ${health.cpu_temp_c} °C` : ""}`} testId="tank-pi" />
             <Kachel icon={Calendar} label="Nächste Prüfung" value={tank.next_inspection_date ? new Date(tank.next_inspection_date).toLocaleDateString("de-DE") : "–"} sub={inspDays != null ? (inspDays < 0 ? `seit ${-inspDays} Tagen überfällig` : `in ${inspDays} Tagen`) : "TÜV / Sachkundige"} testId="tank-inspection" />
           </div>
         </div>
-
-        {position && <MBoxStandortKarte device={{ position, pi: { gps: gps ? { ...gps, lon: gps.lon } : null } }} />}
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm" data-testid="tank-alarms">
           <div className="px-5 py-3 border-b border-gray-100"><h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2"><Fuel className="w-4 h-4 text-fuchsia-500" /> Meldungen</h2></div>
