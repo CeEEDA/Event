@@ -265,8 +265,29 @@ echo "  Geraet: {name}"
 {lte_echo}
 echo "========================================================"
 wait_for_apt() {{
-    while fuser /var/lib/dpkg/lock-frontend &>/dev/null 2>&1; do echo "  Warte auf apt-Lock..."; sleep 3; done
+    local i=0
+    while true; do
+        if command -v fuser >/dev/null 2>&1; then
+            fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+        else
+            pgrep -x apt-get >/dev/null || pgrep -x apt >/dev/null || pgrep -x dpkg >/dev/null || pgrep -f unattended-upgrade >/dev/null || break
+        fi
+        i=$((i+1)); [ $((i % 10)) -eq 1 ] && echo "  Warte auf apt-Lock (anderer apt/dpkg-Prozess laeuft)..."
+        sleep 3
+    done
 }}
+apt_install() {{
+    local n
+    for n in 1 2 3 4 5 6; do
+        wait_for_apt
+        if apt-get install -y -qq "$@"; then return 0; fi
+        echo "  apt-get install fehlgeschlagen (Versuch $n/6) - erneut in 15 s..."
+        sleep 15
+    done
+    return 1
+}}
+# Automatische Updates waehrend des Setups anhalten (halten sonst den dpkg-Lock)
+systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
 
 # ===== SCHRITT 0: ALTE INSTALLATION AUFRAUMEN =====
 echo ""
@@ -284,9 +305,8 @@ echo "  Aufraumen abgeschlossen."
 echo ""
 echo "[1/{total}] System aktualisieren..."
 wait_for_apt
-apt-get update -qq
-wait_for_apt
-apt-get install -y -qq python3-pip python3-venv python3-serial gpsd gpsd-clients wget usbutils
+apt-get update -qq || true
+apt_install psmisc python3-pip python3-venv python3-serial gpsd gpsd-clients wget usbutils
 pip3 install --break-system-packages --quiet mpremote 2>/dev/null || pip3 install --quiet mpremote 2>/dev/null || true
 
 # Pi 5: USB-Autosuspend aus (SIM7600 + USB-Geraete)

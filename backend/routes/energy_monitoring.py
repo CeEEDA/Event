@@ -2052,8 +2052,7 @@ echo "[{step}/{total_steps}] LTE+GPS konfigurieren (SIM7600E-H)..."
 
 # --- 3a: Zusaetzliche Pakete (ppp, ifmetric, dnsutils - gpsd bereits in Schritt 1) ---
 echo "  Pakete installieren..."
-wait_for_apt
-sudo apt-get install -y -qq ppp ifmetric dnsutils lsof
+if type apt_install >/dev/null 2>&1; then apt_install ppp ifmetric dnsutils lsof; else wait_for_apt; sudo apt-get install -y -qq ppp ifmetric dnsutils lsof; fi
 
 # --- 3b: ModemManager deaktivieren (blockiert ttyUSB-Ports!) ---
 echo "  ModemManager deaktivieren..."
@@ -2460,13 +2459,31 @@ echo "  Geraet: {device.get('serial_number', device_id[:12])}"
 {lte_header_echo}
 echo "========================================================"
 
-# Helper: Warte bis apt/dpkg-Lock frei ist
+# Helper: Warte bis apt/dpkg-Lock frei ist (auch ohne psmisc/fuser), apt mit Wiederholung
 wait_for_apt() {{
-    while fuser /var/lib/dpkg/lock-frontend &>/dev/null 2>&1; do
-        echo "  Warte auf apt-Lock..."
+    local i=0
+    while true; do
+        if command -v fuser >/dev/null 2>&1; then
+            fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+        else
+            pgrep -x apt-get >/dev/null || pgrep -x apt >/dev/null || pgrep -x dpkg >/dev/null || pgrep -f unattended-upgrade >/dev/null || break
+        fi
+        i=$((i+1)); [ $((i % 10)) -eq 1 ] && echo "  Warte auf apt-Lock (anderer apt/dpkg-Prozess laeuft)..."
         sleep 3
     done
 }}
+apt_install() {{
+    local n
+    for n in 1 2 3 4 5 6; do
+        wait_for_apt
+        if apt-get install -y -qq "$@"; then return 0; fi
+        echo "  apt-get install fehlgeschlagen (Versuch $n/6) - erneut in 15 s..."
+        sleep 15
+    done
+    return 1
+}}
+# Automatische Updates waehrend des Setups anhalten (halten sonst den dpkg-Lock)
+systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
 
 # ===== SCHRITT 0: ALTE INSTALLATION AUFRAUMEN =====
 echo ""
@@ -2495,11 +2512,9 @@ echo "  Aufraumen abgeschlossen."
 echo ""
 echo "[1/{total_steps}] System aktualisieren..."
 wait_for_apt
-sudo apt-get update -qq
-wait_for_apt
-sudo apt-get install -y -qq python3-pip python3-venv gpsd libusb-1.0-0
-wait_for_apt
-sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional)"
+sudo apt-get update -qq || true
+apt_install psmisc python3-pip python3-venv gpsd libusb-1.0-0
+apt_install gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional)"
 
 # Python-Pakete
 sudo pip3 install --break-system-packages --quiet pymodbus pyserial pyusb requests 2>/dev/null || \
