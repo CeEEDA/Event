@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Fuel, Droplets, Gauge, Satellite, AlertTriangle, Calendar, Cpu } from "lucide-react";
+import { ArrowLeft, RefreshCw, Fuel, Droplets, Satellite, AlertTriangle, Calendar, Cpu } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { toast } from "sonner";
 import { Logo } from "../components/Logo";
@@ -128,7 +128,6 @@ export default function TankDetailPage() {
             </div>
           </div>
           <div className="space-y-4">
-            <Kachel icon={Gauge} label="Geber" value={tank.ohm != null ? `${tank.ohm} Ω` : "–"} sub="0 Ω leer · 190 Ω voll" testId="tank-ohm" />
             <Kachel icon={Droplets} label="Letzte Messung" value={fmtTime(tank.measured_at)} sub={online ? "Pi meldet regelmäßig" : "Pi offline"} testId="tank-measured" />
             <Kachel icon={Satellite} label="GPS" value={gps?.fix ? `${Number(gps.lat).toFixed(5)}, ${Number(gps.lon).toFixed(5)}` : "kein Fix"} sub={gps?.fix ? `Modus ${gps.mode}${gps.ts ? " · " + fmtTime(gps.ts) : ""}` : "LTE-HAT GPS"} testId="tank-gps" />
             <Kachel icon={Cpu} label="Pi" value={online ? "online" : "offline"} sub={`v${tank.pi?.version || "–"}${health.ppp0 != null ? ` · LTE ${health.ppp0 ? "verbunden" : "aus"}` : ""}${health.cpu_temp_c ? ` · ${health.cpu_temp_c} °C` : ""}`} testId="tank-pi" />
