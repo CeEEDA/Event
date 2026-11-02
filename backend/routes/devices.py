@@ -80,6 +80,8 @@ class DeviceCreate(BaseModel):
     tank_capacity: Optional[str] = None  # Tankinhalt als Freitext (z.B. "5.000 L Diesel")
     last_inspection_date: Optional[str] = None  # ISO-Datum YYYY-MM-DD
     next_inspection_date: Optional[str] = None  # ISO-Datum YYYY-MM-DD
+    tank_warn_pct: Optional[int] = None  # Tankgeber: Warnung unter x % (Standard 25)
+    tank_crit_pct: Optional[int] = None  # Tankgeber: Alarm unter x % (Standard 10)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     # M-Box Lichtmast (OPC UA zur Siemens S7 -> routes/mbox.py)
@@ -140,6 +142,8 @@ class DeviceUpdate(BaseModel):
     tank_capacity: Optional[str] = None
     last_inspection_date: Optional[str] = None
     next_inspection_date: Optional[str] = None
+    tank_warn_pct: Optional[int] = None
+    tank_crit_pct: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     mbox_endpoint: Optional[str] = None
@@ -269,6 +273,8 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
         "tank_capacity": data.tank_capacity if data.device_type == "tank" else None,
         "last_inspection_date": data.last_inspection_date if data.device_type == "tank" else None,
         "next_inspection_date": data.next_inspection_date if data.device_type == "tank" else None,
+        "tank_warn_pct": data.tank_warn_pct if data.device_type == "tank" else None,
+        "tank_crit_pct": data.tank_crit_pct if data.device_type == "tank" else None,
         "latitude": data.latitude,
         "longitude": data.longitude,
         "created_at": datetime.now(timezone.utc).isoformat(),

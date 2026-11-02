@@ -2042,55 +2042,13 @@ async def get_dse5510_script(variant: str = "rs232"):
     )
 
 
-@router.post("/devices/{device_id}/dse5510-setup")
-async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
-    """Generate an all-in-one bash installer for DSE controllers via USB/RS232 + Pi."""
-    if body is None:
-        body = DSE5510SetupRequest()
-
-    api_base = _get_api_base(request)
-
-    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
-    if not device:
-        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
-
-    # Generate a new device key
-    plain_key = secrets.token_hex(24)
-    key_hash = _hash_key(plain_key)
-    await db.devices.update_one(
-        {"id": device_id},
-        {"$set": {"device_key_hash": key_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
-
-    api_url = _get_api_base(request)
-
-    # Read the sync script template - USB or Serial depending on connection
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-
-    # Check if this is a USB-direct DSE device (L401, 8610 etc. without RS232 adapter)
-    is_usb_direct = body.connection_type == "pi_usb" or body.serial_port.lower() in ("usb", "auto", "/dev/dse-usb")
-
-    if is_usb_direct:
-        script_path = os.path.join(static_dir, "dse_usb_sync.py")
-    else:
-        script_path = os.path.join(static_dir, "dse5510_sync.py")
-
-    with open(script_path, "r") as f:
-        sync_script = f.read()
-
-    # Dynamic step count based on LTE
-    total_steps = 9 if body.enable_lte else 7
-    lte_port = body.lte_port if body.enable_lte else ""
-
-    # Build LTE setup block (only if enabled)
-    lte_setup_block = ""
-    lte_verify_block = ""
-    if body.enable_lte:
-        lte_setup_block = f"""
+def _build_lte_blocks(lte_apn: str, total_steps: int, step: int = 3):
+    """LTE (SIM7600E-H, PPP, Telekom M2M) + gpsd-Bloecke fuer Pi-Setup-Skripte (DSE 5510, Tankgeber ...)."""
+    lte_setup_block = f"""
 # ===== SCHRITT 3: LTE+GPS SETUP (SIM7600E-H) =====
 # Basiert auf getesteter Konfiguration: PPP + NetworkManager + gpsd
 echo ""
-echo "[3/{total_steps}] LTE+GPS konfigurieren (SIM7600E-H)..."
+echo "[{step}/{total_steps}] LTE+GPS konfigurieren (SIM7600E-H)..."
 
 # --- 3a: Zusaetzliche Pakete (ppp, ifmetric, dnsutils - gpsd bereits in Schritt 1) ---
 echo "  Pakete installieren..."
@@ -2167,7 +2125,7 @@ TIMEOUT 30
 OK ATZ
 OK 'AT+CMEE=2'
 OK-AT-OK 'AT+CPIN?'
-OK 'AT+CGDCONT=1,"IP","{body.lte_apn}"'
+OK 'AT+CGDCONT=1,"IP","{lte_apn}"'
 OK ATD*99#
 CONNECT ''
 CHATSCRIPT
@@ -2361,13 +2319,12 @@ GPSSTATUS
 
 sudo chmod +x /usr/local/bin/lte-status /usr/local/bin/gps-status
 
-echo "  APN: {body.lte_apn}"
+echo "  APN: {lte_apn}"
 echo "  GPS-Port: $LTE_GPS_PORT"
 echo "  Routing: eth0=100, wlan0=600, ppp0=700"
 echo "  Tools: lte-status, gps-status"
 """
-
-        lte_verify_block = f"""
+    lte_verify_block = f"""
 # LTE + GPS Vorab-Test (SICHER: eth0-Route bleibt intakt)
 echo ""
 echo "  LTE Vorab-Test (vor Reboot)..."
@@ -2421,6 +2378,54 @@ echo "    lte-status    # Netzwerk + LTE"
 echo "    gps-status    # GPS-Position"
 echo "    ip route      # Routing-Tabelle"
 """
+    return lte_setup_block, lte_verify_block
+
+
+@router.post("/devices/{device_id}/dse5510-setup")
+async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
+    """Generate an all-in-one bash installer for DSE controllers via USB/RS232 + Pi."""
+    if body is None:
+        body = DSE5510SetupRequest()
+
+    api_base = _get_api_base(request)
+
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    # Generate a new device key
+    plain_key = secrets.token_hex(24)
+    key_hash = _hash_key(plain_key)
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"device_key_hash": key_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    api_url = _get_api_base(request)
+
+    # Read the sync script template - USB or Serial depending on connection
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+
+    # Check if this is a USB-direct DSE device (L401, 8610 etc. without RS232 adapter)
+    is_usb_direct = body.connection_type == "pi_usb" or body.serial_port.lower() in ("usb", "auto", "/dev/dse-usb")
+
+    if is_usb_direct:
+        script_path = os.path.join(static_dir, "dse_usb_sync.py")
+    else:
+        script_path = os.path.join(static_dir, "dse5510_sync.py")
+
+    with open(script_path, "r") as f:
+        sync_script = f.read()
+
+    # Dynamic step count based on LTE
+    total_steps = 9 if body.enable_lte else 7
+    lte_port = body.lte_port if body.enable_lte else ""
+
+    # Build LTE setup block (only if enabled)
+    lte_setup_block = ""
+    lte_verify_block = ""
+    if body.enable_lte:
+        lte_setup_block, lte_verify_block = _build_lte_blocks(body.lte_apn, total_steps)
 
     lte_after_line = "\nAfter=lte-failover.service" if body.enable_lte else ""
 

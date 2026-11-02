@@ -26,3 +26,5 @@ Registrierung über `/kirmes/anmeldung` (E-Mail-Verifikation per 6-stelligem Cod
 ## Stripe
 - LIVE KEYS bereits in `.env` konfiguriert (STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET)
 - Preview-Umgebung hat Test-Key-Platzhalter → Refund-Tests schlagen dort fehl, in Live funktionieren sie
+
+- Tankgeber-Demo: Geraet `TANK-UI-DEMO` (id 316b4849-6443-4ef8-a3ce-da8c52a4c467, 3.000 L, 21 Verlaufspunkte, 41 %) -> /tank/316b4849-6443-4ef8-a3ce-da8c52a4c467; Geraeteschluessel per Pi-Setup neu generieren (POST /api/tank/{id}/pi-setup, Key steht im Skript als `device_key = ...`).

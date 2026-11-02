@@ -254,11 +254,27 @@ export default function GeneratorDashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [genRes, statsRes, mboxRes] = await Promise.all([
+      const [genRes, statsRes, mboxRes, tankRes] = await Promise.all([
         api.get("/generators").catch(() => ({ data: [] })),
         api.get("/generators/stats/overview").catch(() => ({ data: null })),
         api.get("/mbox/devices").catch(() => ({ data: { devices: [] } })),
+        api.get("/tank/devices").catch(() => ({ data: { devices: [] } })),
       ]);
+      // Tankgeber (Pi + Pico) als Zeilen wie Generatoren
+      const tankRows = (tankRes.data?.devices || []).map(d => ({
+        id: `tank-${d.id}`,
+        tank_id: d.id,
+        kind: "tank",
+        serial_number: d.user_field || d.serial_number,
+        name: d.user_field || d.serial_number,
+        model: `Tank ${d.tank_capacity || ""} · ${d.serial_number}`,
+        location_name: d.liters != null ? `${d.liters.toLocaleString("de-DE")} L im Tank` : "",
+        status: d.status === "ausser_betrieb" ? "offline" : d.alarm_state === "crit" ? "alarm" : d.alarm_state === "warn" ? "warning" : d.pi?.online ? "online" : "offline",
+        last_seen: d.pi?.last_seen || null,
+        latitude: d.latitude,
+        longitude: d.longitude,
+        latest_telemetry: d.fuel_level_pct != null ? { fuel_level: d.fuel_level_pct, fault_text: d.sensor_error || null } : null,
+      }));
       // M-Box Lichtmasten als normale Zeilen in die Liste einreihen
       const mboxRows = (mboxRes.data?.devices || []).map(d => ({
         id: `mbox-${d.id}`,
@@ -274,7 +290,7 @@ export default function GeneratorDashboardPage() {
         longitude: d.longitude,
         latest_telemetry: null,
       }));
-      setGenerators([...genRes.data, ...mboxRows]);
+      setGenerators([...genRes.data, ...mboxRows, ...tankRows]);
       setStats(statsRes.data);
     } catch (err) {
       toast.error("Fehler beim Laden der Generatoren");
@@ -445,7 +461,7 @@ export default function GeneratorDashboardPage() {
                         )}
                         {gen.location_name && <p className="text-xs text-gray-400 mt-1">{gen.location_name}</p>}
                         <button
-                          onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : `/generators/${gen.id}`)}
+                          onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : gen.kind === "tank" ? `/tank/${gen.tank_id}` : `/generators/${gen.id}`)}
                           className="mt-2 w-full text-xs font-medium text-fuchsia-600 hover:text-fuchsia-700 hover:underline text-left"
                           data-testid={`map-popup-details-${gen.id}`}
                         >
@@ -479,9 +495,9 @@ export default function GeneratorDashboardPage() {
                   return (
                     <div
                       key={gen.id}
-                      onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : `/generators/${gen.id}`)}
+                      onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : gen.kind === "tank" ? `/tank/${gen.tank_id}` : `/generators/${gen.id}`)}
                       className={`flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${idx > 0 ? "border-t border-gray-100" : ""} ${gen.status === "alarm" || gen.status === "warning" ? "bg-red-50/50" : ""}`}
-                      data-testid={gen.kind === "mbox" ? `mbox-row-${gen.serial_number}` : `generator-row-${gen.serial_number || gen.id}`}
+                      data-testid={gen.kind === "mbox" ? `mbox-row-${gen.serial_number}` : gen.kind === "tank" ? `tank-row-${gen.serial_number}` : `generator-row-${gen.serial_number || gen.id}`}
                     >
                       {/* Status Dot */}
                       <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.color}`} title={s.label} />
@@ -514,7 +530,7 @@ export default function GeneratorDashboardPage() {
 
                       {/* Status + Time */}
                       <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                        <span className={`text-[10px] font-medium ${s.textColor}`}>{gen.kind === "mbox" ? (gen.status === "online" ? "Pi online" : "Pi offline") : s.label}</span>
+                        <span className={`text-[10px] font-medium ${s.textColor}`}>{gen.kind === "mbox" || (gen.kind === "tank" && (gen.status === "online" || gen.status === "offline")) ? (gen.status === "online" ? "Pi online" : "Pi offline") : s.label}</span>
                         <span className="text-[10px] text-gray-400">{lastSeen}</span>
                       </div>
 

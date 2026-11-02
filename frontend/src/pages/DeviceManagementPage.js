@@ -1038,6 +1038,72 @@ function MBoxPiSetupSection({ device }) {
   );
 }
 
+function TankPiSetupSection({ device }) {
+  const [enableLte, setEnableLte] = useState(true);
+  const [lteApn, setLteApn] = useState("internet.m2mportal.de");
+  const [interval, setIntervalSec] = useState(60);
+  const [wgetCommand, setWgetCommand] = useState("");
+  const [loading, setLoading] = useState(false);
+  const snap = device.latest_snapshot || {};
+  const online = device.tank_pi_last_seen && (Date.now() - new Date(device.tank_pi_last_seen).getTime()) < 300000;
+
+  const handleGenerate = async () => {
+    if (!window.confirm("Ein neuer Geräteschlüssel für den Tankgeber-Pi wird generiert und in das Setup-Skript eingebettet.\n\nEin bereits installierter Pi muss danach neu eingerichtet werden.\n\nFortfahren?")) return;
+    setLoading(true);
+    try {
+      const res = await api.post(`/tank/${device.id}/pi-setup`, { enable_lte: enableLte, lte_apn: lteApn, interval });
+      setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
+      toast.success("Tankgeber-Setup generiert!");
+    } catch (err) {
+      toast.error(`Fehler: ${err?.response?.data?.detail || err?.message}`);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-3 mt-3" data-testid="tank-pi-setup">
+      <div className="flex items-center gap-2 mb-1">
+        <Server className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">Pi-Setup Tankgeber</h3>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${online ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`} data-testid="tank-pi-badge">
+          {online ? `online · ${snap.fuel_level_pct != null ? Math.round(snap.fuel_level_pct) + " %" : "–"}` : device.device_key_hash || device.tank_pi_last_seen ? "eingerichtet, offline" : "nicht eingerichtet"}
+        </span>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi + SIM7600-LTE-HAT (Telekom M2M, wie DSE 5510) + Pico am USB (ADC, Geber 0–190 Ω, R_REF 100 Ω). Das Setup flasht MicroPython auf den Pico, lädt das Messprogramm, richtet gpsd/LTE ein und meldet den Füllstand alle {interval} s ans Portal.</p>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <label className="flex items-center gap-2 cursor-pointer col-span-1" data-testid="tank-enable-lte">
+          <input type="checkbox" checked={enableLte} onChange={e => setEnableLte(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500" />
+          <span className="text-xs font-medium text-gray-700">LTE (SIM7600E-H)</span>
+        </label>
+        <div>
+          <Label className="text-gray-600 text-[11px]">APN</Label>
+          <Input type="text" value={lteApn} onChange={e => setLteApn(e.target.value)} disabled={!enableLte} className="mt-0.5 text-xs h-[30px]" data-testid="tank-lte-apn" />
+        </div>
+        <div>
+          <Label className="text-gray-600 text-[11px]">Meldung alle (s)</Label>
+          <Input type="number" min={10} max={3600} value={interval} onChange={e => setIntervalSec(parseInt(e.target.value) || 60)} className="mt-0.5 text-xs h-[30px]" data-testid="tank-interval" />
+        </div>
+      </div>
+      {wgetCommand && (
+        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="tank-pi-setup-instructions">
+          <p className="text-xs text-emerald-800 font-medium mb-2">Diesen Befehl auf dem Pi ausführen (Pico per USB angeschlossen):</p>
+          <div className="flex items-start gap-2">
+            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-[11px] font-mono select-all break-all leading-relaxed">{wgetCommand}</code>
+            <button type="button" onClick={() => { navigator.clipboard.writeText(wgetCommand); toast.success("Kopiert!"); }} className="shrink-0 px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100" data-testid="tank-pi-copy-wget-btn" title="Kopieren">
+              <Download className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
+          <p className="text-[10px] text-emerald-600 mt-2">Link ist 1 Stunde gültig. Ohne MicroPython auf dem Pico fragt das Skript nach BOOTSEL.</p>
+        </div>
+      )}
+      <Button type="button" variant="outline" size="sm" onClick={handleGenerate} disabled={loading} className="text-gray-600 hover:text-fuchsia-600" data-testid="tank-pi-generate-setup-btn">
+        <Download className="w-3.5 h-3.5 mr-1.5" />
+        {loading ? "Wird generiert..." : "Pi-Setup generieren"}
+      </Button>
+      <p className="text-[10px] text-gray-400 mt-2">Enthält: MicroPython-Flash + Messprogramm (Pico) + udev /dev/tank-pico + gpsd{enableLte ? " + LTE-Failover (PPP, Telekom M2M)" : ""} + Sync-Dienst „tank_pi_sync“ mit 48-h-Offline-Puffer</p>
+    </div>
+  );
+}
+
 const DEVICE_TYPES = [
   { value: "stromerzeuger", label: "Stromerzeuger", icon: Zap },
   { value: "lichtmast", label: "Lichtmast", icon: Lightbulb },
@@ -1103,6 +1169,8 @@ const EMPTY_FORM = {
   tank_capacity: "",
   last_inspection_date: "",
   next_inspection_date: "",
+  tank_warn_pct: 25,
+  tank_crit_pct: 10,
   latitude: "",
   longitude: "",
   mbox_endpoint: "",
@@ -1876,6 +1944,29 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   Pruefberichte als PDF in der Dateiablage unten hochladen.
                 </p>
               </div>
+              {/* Tankgeber: Warnschwellen + Pi-Setup */}
+              <div>
+                <h4 className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Server className="w-3.5 h-3.5 text-fuchsia-500" />
+                  Tankgeber (Pi + Pico, 0–190 Ω)
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-gray-600 text-xs">Warnung unter %</Label>
+                    <Input type="number" min={1} max={99} value={formData.tank_warn_pct ?? 25}
+                      onChange={(e) => update("tank_warn_pct", e.target.value === "" ? null : parseInt(e.target.value))}
+                      className="mt-1" data-testid="tank-warn-pct-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-600 text-xs">Alarm unter %</Label>
+                    <Input type="number" min={1} max={99} value={formData.tank_crit_pct ?? 10}
+                      onChange={(e) => update("tank_crit_pct", e.target.value === "" ? null : parseInt(e.target.value))}
+                      className="mt-1" data-testid="tank-crit-pct-input" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Füllstand = Geber-Prozent × Tankinhalt (linear). Meldung erscheint in Power Monitoring (Alarme).</p>
+                {editing ? <TankPiSetupSection device={editing} /> : <p className="text-[10px] text-gray-400 mt-2">Pi-Setup-Skript nach dem Anlegen im Bearbeiten-Dialog.</p>}
+              </div>
             </div>
           )}
 
@@ -2176,6 +2267,11 @@ export default function DeviceManagementPage() {
       mbox_user: device.mbox_user || "",
       mbox_password: "",
       mbox_password_set: !!device.mbox_password_set,
+      tank_capacity: device.tank_capacity || "",
+      last_inspection_date: device.last_inspection_date || "",
+      next_inspection_date: device.next_inspection_date || "",
+      tank_warn_pct: device.tank_warn_pct ?? 25,
+      tank_crit_pct: device.tank_crit_pct ?? 10,
     });
     setModalOpen(true);
   };

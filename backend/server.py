@@ -2100,6 +2100,10 @@ from routes.mbox_audio import router as mbox_audio_router, init_mbox_audio_route
 init_mbox_audio_routes(db, decode_jwt_token)
 app.include_router(mbox_audio_router)
 
+from routes.tank_pi import router as tank_router, init_tank_routes
+init_tank_routes(db, decode_jwt_token)
+app.include_router(tank_router)
+
 # Admin GPS Diagnose/Reset
 from routes.admin_gps import router as admin_gps_router, init_admin_gps_routes
 init_admin_gps_routes(db, decode_jwt_token)
