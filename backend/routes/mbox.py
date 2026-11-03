@@ -807,7 +807,9 @@ async def mbox_audio_status(device_id: str, user: dict = Depends(get_user)):
     await _allow(user, "lesen", device_id)
     device = await _device(device_id)
     last = await db.mbox_pi_commands.find({"device_id": device_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
-    return {"pi": mbox_pi.pi_state(device), "files": await mbox_pi.device_manifest(db, device_id), "commands": last}
+    # Geraeteseite: nur Standarddateien (Testansage). Kunden-Durchsagen gehoeren in den Auftrag / die Durchsagen-Seite.
+    files = [m for m in await mbox_pi.device_manifest(db, device_id) if not m.get("order_pk")]
+    return {"pi": mbox_pi.pi_state(device), "files": files, "commands": last}
 
 
 @router.post("/{device_id}/audio/play")
