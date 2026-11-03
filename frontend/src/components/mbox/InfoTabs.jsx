@@ -1,6 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import api from "../../lib/api";
 import { Karte, Tab, Zeile, Dot, Btn, Fehlt } from "./MBoxUi";
 import { MELDUNGEN, codeText } from "./mboxTexte";
 import { PROBE, MODULE, EXTRA, ja, z2, text } from "./mboxVars";
@@ -91,59 +88,15 @@ export function ServiceTab({ h, befehl, darf, isAdmin, confirm }) {
   );
 }
 
-// Dienst-Log des Node/OPC-UA-Prozesses (Admin): zeigt, warum der Dienst nicht startet / nicht verbindet
-function DienstLog({ deviceId }) {
-  const [d, setD] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const preRef = useRef(null);
-  const lade = useCallback(() => api.get(`/mbox/${deviceId}/log?lines=80`).then(r => setD(r.data)).catch(() => {}), [deviceId]);
-  useEffect(() => { lade(); const t = setInterval(lade, 10000); return () => clearInterval(t); }, [lade]);
-  useEffect(() => { if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight; }, [d]);
-  const neustart = async () => {
-    setBusy(true);
-    try { await api.post(`/mbox/${deviceId}/restart`); toast.success("Dienst neu gestartet"); setTimeout(lade, 2500); }
-    catch (e) { toast.error(e.response?.data?.detail || "Neustart fehlgeschlagen"); }
-    finally { setBusy(false); }
-  };
-  const rt = d?.runtime, svc = d?.service;
-  const stuerztAb = rt && !rt.running && (rt.restarts >= 2 || rt.exit_code != null);
-  return (
-    <Karte titel="M-Box Dienst (Node / OPC UA) auf dem Server" testId="mbox-dienst-log"
-      action={<div className="flex gap-2"><Btn onClick={lade} testId="mbox-dienst-log-refresh">Aktualisieren</Btn><Btn onClick={neustart} disabled={busy} testId="mbox-dienst-restart">Dienst neu starten</Btn></div>}>
-      {rt && (
-        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 mb-3" data-testid="mbox-dienst-runtime">
-          <span>Status: <b className={rt.running ? "text-emerald-700" : "text-red-700"}>{rt.running ? `läuft (PID ${rt.pid})` : "gestoppt"}</b></span>
-          <span>Neustarts: <b>{rt.restarts}</b></span>
-          {rt.exit_code != null && <span>Exit-Code: <b className="text-red-700">{rt.exit_code}</b></span>}
-          <span>Port: {rt.port}</span>
-          {svc && <span>Node: <b className={svc.node_version_ok === false ? "text-red-700" : ""}>{svc.node_version || "nicht gefunden"}</b>{svc.node_version_ok === false && <> – benötigt {svc.node_required}</>}</span>}
-        </div>
-      )}
-      {stuerztAb && (
-        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mb-3" data-testid="mbox-dienst-crash">
-          Der Dienst beendet sich direkt nach dem Start{rt.last_error ? `: ${rt.last_error}` : ""}. Die Ursache steht in den letzten Log-Zeilen unten
-          {svc?.node_version_ok === false ? ` – Node ${svc.node_version} ist zu alt, node-opcua braucht ${svc.node_required}: Node.js 22 LTS installieren (winget install OpenJS.NodeJS.LTS) und Backend-Dienst neu starten.` : "."}
-        </p>
-      )}
-      <pre ref={preRef} className="text-[11px] leading-relaxed bg-gray-950 text-gray-100 rounded-lg p-3 max-h-80 overflow-auto whitespace-pre-wrap break-all" data-testid="mbox-dienst-log-text">
-        {d ? (d.lines?.length ? d.lines.join("\n") : `Noch kein Log (${d.log_path || "–"})`) : "Lade…"}
-      </pre>
-    </Karte>
-  );
-}
-
-export function DiagnoseTab({ h, deviceId }) {
+export function DiagnoseTab({ h }) {
   const { v } = h;
   return (
-    <div className="space-y-6">
-      <DienstLog deviceId={deviceId} />
-      <Karte titel="Eingänge, Ausgänge, Rohwerte" testId="mbox-tab-diagnose">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-x-4 gap-y-1 text-sm">
-          {EXTRA.diagnose.map(n => { const x = v(n); return (
-            <div key={n} className="text-gray-700">{typeof x === "number" ? <b className="mr-1">{x}</b> : <Dot on={x} />}{n.replace("DB_HMI.IO.", "")}</div>
-          ); })}
-        </div>
-      </Karte>
-    </div>
+    <Karte titel="Eingänge, Ausgänge, Rohwerte" testId="mbox-tab-diagnose">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-x-4 gap-y-1 text-sm">
+        {EXTRA.diagnose.map(n => { const x = v(n); return (
+          <div key={n} className="text-gray-700">{typeof x === "number" ? <b className="mr-1">{x}</b> : <Dot on={x} />}{n.replace("DB_HMI.IO.", "")}</div>
+        ); })}
+      </div>
+    </Karte>
   );
 }

@@ -86,10 +86,6 @@ export default function MBoxPage() {
   if (!darf && level !== "none") hinweise.push(["warn", "Du hast nur Lese-Zugriff: Status ist sichtbar, Schalten ist gesperrt."]);
   if (kunde) hinweise.push(["info", "Sie können an diesem Lichtmast die Beleuchtung schalten und Durchsagen abspielen. Generator, Netz und Einstellungen betreut Eventenergie."]);
   if (info?.error) hinweise.push(["err", info.error]);
-  const rt = info?.runtime;
-  if (rt && !rt.running && rt.restarts >= 2 && info?.service_installed !== false) {
-    hinweise.push(["err", <span data-testid="mbox-service-crashloop">Der M-Box Dienst auf dem Server stürzt beim Start ab ({rt.restarts} Neustarts{rt.exit_code != null ? `, Exit-Code ${rt.exit_code}` : ""}){info?.service?.node_version_ok === false ? ` – Node ${info.service.node_version} ist zu alt, benötigt ${info.service.node_required}` : ""}. Ursache im Tab „Diagnose“ → Dienst-Log.</span>]);
-  }
   const svc = info?.service;
   if (info && info.service_installed === false) {
     const inst = svc?.install;
@@ -191,7 +187,7 @@ export default function MBoxPage() {
             {seite === "uhr" && <UhrTab {...tabProps} />}
             {seite === "meldungen" && <MeldungenTab {...tabProps} />}
             {seite === "service" && <ServiceTab {...tabProps} />}
-            {seite === "diagnose" && level === "admin" && <DiagnoseTab {...tabProps} deviceId={id} />}
+            {seite === "diagnose" && level === "admin" && <DiagnoseTab {...tabProps} />}
             {seite === "durchsage" && <AudioPiTab deviceId={id} darf={darf} isAdmin={level === "admin"} kunde={kunde} />}
           </div>
         </div>

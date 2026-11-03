@@ -191,10 +191,42 @@ if (-not $SkipBackend) {
             if (-not $NpmCmd -and $cand -and (Test-Path $cand)) { $NpmCmd = $cand }
         }
         if ($NpmCmd) {
-            Log "  M-Box: npm install (mbox_service) mit $NpmCmd ..."
+            # Node-Version pruefen: node-opcua braucht require() von ES-Modulen -> Node >= 20.19 bzw. 22.12 (empfohlen 22 LTS)
+            $NodeCmd = Join-Path (Split-Path $NpmCmd) "node.exe"
+            if (-not (Test-Path $NodeCmd)) { $NodeCmd = "node" }
+            $NodeVer = $null
+            try { $NodeVer = (& $NodeCmd --version 2>$null).Trim().TrimStart("v") } catch { }
+            $NodeOk = $false
+            if ($NodeVer) {
+                $v = [version]($NodeVer -replace '[^\d.]','')
+                $NodeOk = ($v.Major -ge 22 -and $v -ge [version]"22.12") -or ($v.Major -eq 20 -and $v -ge [version]"20.19") -or ($v.Major -gt 22)
+            }
+            if ($NodeOk) {
+                Log "  Node.js $NodeVer OK"
+            } else {
+                Log "  FEHLER: Node.js $NodeVer ist zu alt fuer den M-Box Dienst (node-opcua braucht >= 22.12, 20.19 reicht notfalls)." "Red"
+                Log "         Node 22 LTS installieren:  winget install OpenJS.NodeJS.LTS   (danach Update erneut ausfuehren)" "Red"
+                try {
+                    if (Get-Command winget -ErrorAction SilentlyContinue) {
+                        Log "  Versuche Node 22 LTS per winget zu installieren..."
+                        winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Tee-Object -FilePath $LogFile -Append
+                        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+                        $NodeVer = (& node --version 2>$null).Trim().TrimStart("v")
+                        Log "  Node.js jetzt: $NodeVer"
+                    }
+                } catch { Log "  winget-Installation fehlgeschlagen: $_" "Yellow" }
+            }
+            Log "  M-Box: Node-Pakete (mbox_service) mit $NpmCmd ..."
             Push-Location $MBoxDir
-            & $NpmCmd install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
-            $npmRc = $LASTEXITCODE
+            if (Test-Path (Join-Path $MBoxDir "package-lock.json")) {
+                # exakt die getesteten Versionen (package-lock), keine ungewollten Major-Updates
+                & $NpmCmd ci --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
+                $npmRc = $LASTEXITCODE
+                if ($npmRc -ne 0) { & $NpmCmd install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append; $npmRc = $LASTEXITCODE }
+            } else {
+                & $NpmCmd install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
+                $npmRc = $LASTEXITCODE
+            }
             Pop-Location
             if ($npmRc -eq 0 -and (Test-Path (Join-Path $MBoxDir "node_modules\node-opcua"))) {
                 Log "  M-Box Node-Pakete OK"

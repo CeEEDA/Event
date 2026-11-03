@@ -4,12 +4,12 @@
   "description": "M-Box Lichtmast per OPC UA bedienen (Webserver + Bedienseite)",
   "main": "server.js",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=20.19" },
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.22.3",
-    "node-opcua": "^2.186.17"
+    "express": "4.22.3",
+    "node-opcua": "2.186.17"
   }
 }

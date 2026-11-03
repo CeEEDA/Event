@@ -181,34 +181,9 @@ def _find_bin(name: str) -> Optional[str]:
 _install = {"running": False, "ok": None, "finished_at": None, "output": "", "started_at": None}
 
 
-_node_version_cache = {}
-
-
-def _node_version(node_bin: Optional[str]) -> Optional[str]:
-    if not node_bin:
-        return None
-    if node_bin in _node_version_cache:
-        return _node_version_cache[node_bin]
-    try:
-        kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
-        v = subprocess.run([node_bin, "--version"], capture_output=True, text=True, timeout=10, **kwargs).stdout.strip()
-    except Exception as e:
-        v = f"Fehler: {e}"
-    _node_version_cache[node_bin] = v
-    return v
-
-
 def service_info() -> dict:
-    node_bin = _find_bin("node")
-    ver = _node_version(node_bin)
-    ok_ver = None
-    try:
-        ok_ver = int(ver.lstrip("v").split(".")[0]) >= 22 if ver and ver.startswith("v") else None
-    except Exception:
-        ok_ver = None
     return {"service_dir": str(SERVICE_DIR), "installed": (SERVICE_DIR / "node_modules" / "node-opcua").exists(),
-            "node_bin": node_bin, "node_version": ver, "node_version_ok": ok_ver, "node_required": ">= 22.13 (node-opcua)",
-            "npm_bin": _find_bin("npm"), "install": dict(_install)}
+            "node_bin": _find_bin("node"), "npm_bin": _find_bin("npm"), "install": dict(_install)}
 
 
 async def install_dependencies() -> dict:
@@ -255,6 +230,13 @@ async def _spawn(device: dict) -> _Proc:
     log_path = _log_dir() / f"mbox_{re.sub(r'[^A-Za-z0-9_-]', '_', device.get('serial_number') or device['id'])}.log"
     p.log_path = str(log_path)
     node_bin = _find_bin("node") or "node"
+    # Log begrenzen: bei Dauer-Neustarts waechst es sonst unbegrenzt -> ueber 2 MB auf die letzten 200 KB kuerzen
+    try:
+        if log_path.exists() and log_path.stat().st_size > 2_000_000:
+            tail = log_path.read_bytes()[-200_000:]
+            log_path.write_bytes(b"===== Log gekuerzt =====\n" + tail)
+    except Exception:
+        pass
     log_file = open(log_path, "ab")
     log_file.write(f"\n===== Start {datetime.now(timezone.utc).isoformat()} port={device.get('mbox_port')} endpoint={device.get('mbox_endpoint')} =====\n".encode())
     log_file.flush()
@@ -299,9 +281,14 @@ async def ensure_running(device: dict) -> _Proc:
         if p and _proc_alive(p):
             await _kill(p)  # Konfig geaendert -> sauber neu starten
         if crashed:
-            # Prozess ist von selbst gestorben -> Neustart, aber hoechstens alle 5 s
-            if time.monotonic() - p.last_start_try < 5:
-                raise HTTPException(status_code=503, detail="M-Box Dienst startet gerade neu, bitte kurz warten")
+            # Prozess ist von selbst gestorben -> Neustart mit Backoff: 5 s, ab dem 5. Absturz in Folge 60 s
+            wartezeit = 60 if p.restarts >= 5 else 5
+            if time.monotonic() - p.last_start_try < wartezeit:
+                hint = ""
+                if p.restarts >= 5:
+                    hint = (f" Der Dienst ist {p.restarts}x direkt nach dem Start abgestuerzt (Exit-Code {p.process.poll() if p.process else '?'}) - "
+                            f"Ursache im Dienst-Log {p.log_path or ''} (typisch: Node.js zu alt, node-opcua braucht >= 20.19/22.12).")
+                raise HTTPException(status_code=503, detail="M-Box Dienst startet gerade neu, bitte kurz warten." + hint)
             p.restarts += 1
         try:
             return await _spawn(device)
@@ -586,13 +573,10 @@ async def mbox_log(device_id: str, lines: int = 200, user: dict = Depends(get_us
     _require(user, "admin")
     device = await _device(device_id)
     p = _procs.get(device_id)
-    log_path = (p.log_path if p and p.log_path else None) or str(_log_dir() / f"mbox_{re.sub(r'[^A-Za-z0-9_-]', '_', device.get('serial_number') or device['id'])}.log")
-    if not Path(log_path).exists():
-        return {"lines": [], "log_path": log_path, "runtime": runtime_status(device), "service": service_info()}
-    p = p or _Proc()
-    p.log_path = log_path
+    if not p or not p.log_path or not Path(p.log_path).exists():
+        return {"lines": []}
     data = Path(p.log_path).read_bytes()[-200_000:].decode("utf-8", "replace").splitlines()
-    return {"lines": data[-max(1, min(lines, 2000)):], "log_path": p.log_path, "runtime": runtime_status(device), "service": service_info()}
+    return {"lines": data[-max(1, min(lines, 2000)):]}
 
 
 @router.get("/{device_id}/audit")
