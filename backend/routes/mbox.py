@@ -181,9 +181,34 @@ def _find_bin(name: str) -> Optional[str]:
 _install = {"running": False, "ok": None, "finished_at": None, "output": "", "started_at": None}
 
 
+_node_version_cache = {}
+
+
+def _node_version(node_bin: Optional[str]) -> Optional[str]:
+    if not node_bin:
+        return None
+    if node_bin in _node_version_cache:
+        return _node_version_cache[node_bin]
+    try:
+        kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+        v = subprocess.run([node_bin, "--version"], capture_output=True, text=True, timeout=10, **kwargs).stdout.strip()
+    except Exception as e:
+        v = f"Fehler: {e}"
+    _node_version_cache[node_bin] = v
+    return v
+
+
 def service_info() -> dict:
+    node_bin = _find_bin("node")
+    ver = _node_version(node_bin)
+    ok_ver = None
+    try:
+        ok_ver = int(ver.lstrip("v").split(".")[0]) >= 22 if ver and ver.startswith("v") else None
+    except Exception:
+        ok_ver = None
     return {"service_dir": str(SERVICE_DIR), "installed": (SERVICE_DIR / "node_modules" / "node-opcua").exists(),
-            "node_bin": _find_bin("node"), "npm_bin": _find_bin("npm"), "install": dict(_install)}
+            "node_bin": node_bin, "node_version": ver, "node_version_ok": ok_ver, "node_required": ">= 22.13 (node-opcua)",
+            "npm_bin": _find_bin("npm"), "install": dict(_install)}
 
 
 async def install_dependencies() -> dict:
@@ -561,10 +586,13 @@ async def mbox_log(device_id: str, lines: int = 200, user: dict = Depends(get_us
     _require(user, "admin")
     device = await _device(device_id)
     p = _procs.get(device_id)
-    if not p or not p.log_path or not Path(p.log_path).exists():
-        return {"lines": []}
+    log_path = (p.log_path if p and p.log_path else None) or str(_log_dir() / f"mbox_{re.sub(r'[^A-Za-z0-9_-]', '_', device.get('serial_number') or device['id'])}.log")
+    if not Path(log_path).exists():
+        return {"lines": [], "log_path": log_path, "runtime": runtime_status(device), "service": service_info()}
+    p = p or _Proc()
+    p.log_path = log_path
     data = Path(p.log_path).read_bytes()[-200_000:].decode("utf-8", "replace").splitlines()
-    return {"lines": data[-max(1, min(lines, 2000)):]}
+    return {"lines": data[-max(1, min(lines, 2000)):], "log_path": p.log_path, "runtime": runtime_status(device), "service": service_info()}
 
 
 @router.get("/{device_id}/audit")
