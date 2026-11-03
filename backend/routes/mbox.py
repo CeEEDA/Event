@@ -108,13 +108,16 @@ def _rate_check(user_id: str, device_id: str):
 
 class _Proc:
     def __init__(self):
-        self.process: Optional[asyncio.subprocess.Process] = None
+        self.process = None            # eigener subprocess.Popen
+        self.external_pid = None       # Dienst laeuft bereits (anderer Backend-Worker hat ihn gestartet)
         self.config_sig = None
         self.started_at = None
         self.restarts = 0
         self.last_start_try = 0.0
         self.log_path = None
         self.last_error = None
+        self._port = None
+        self._port_check = (0.0, False)
 
 
 _procs: dict[str, _Proc] = {}
@@ -147,8 +150,62 @@ def _env_for(device: dict) -> dict:
     return env
 
 
+def _port_open(port: int) -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.4):
+            return True
+    except OSError:
+        return False
+
+
 def _proc_alive(p: _Proc) -> bool:
-    return p.process is not None and p.process.poll() is None
+    if p.process is not None:
+        return p.process.poll() is None
+    if p.external_pid and p._port:
+        # fremder Prozess (anderer uvicorn-Worker): ueber den Port pruefen, hoechstens alle 2 s
+        ts, ok = p._port_check
+        if time.monotonic() - ts > 2:
+            ok = _port_open(p._port)
+            p._port_check = (time.monotonic(), ok)
+        return ok
+    return False
+
+
+def _pidfile(device: dict) -> Path:
+    return _log_dir() / f"mbox_{re.sub(r'[^A-Za-z0-9_-]', '_', device.get('serial_number') or device['id'])}.pid"
+
+
+def _pid_on_port(port: int) -> int:
+    """PID des Prozesses, der auf 127.0.0.1:port lauscht (Windows: netstat, Linux: ss/lsof). 0 = unbekannt."""
+    try:
+        if sys.platform == "win32":
+            out = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True, timeout=10, creationflags=0x08000000).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3].upper() in ("LISTENING", "ABH\u00d6REN", "ABHÖREN"):
+                    return int(parts[4])
+        else:
+            out = subprocess.run(["ss", "-ltnpH", f"sport = :{port}"], capture_output=True, text=True, timeout=10).stdout
+            m = re.search(r"pid=(\d+)", out)
+            if m:
+                return int(m.group(1))
+            out = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"], capture_output=True, text=True, timeout=10).stdout
+            if out.strip():
+                return int(out.split()[0])
+    except Exception:
+        pass
+    return 0
+
+
+def _kill_pid(pid: int):
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=10, creationflags=0x08000000)
+        else:
+            os.kill(pid, 15)
+    except Exception:
+        pass
 
 
 def _find_bin(name: str) -> Optional[str]:
@@ -240,6 +297,24 @@ async def _spawn(device: dict) -> _Proc:
     log_file = open(log_path, "ab")
     log_file.write(f"\n===== Start {datetime.now(timezone.utc).isoformat()} port={device.get('mbox_port')} endpoint={device.get('mbox_endpoint')} =====\n".encode())
     log_file.flush()
+    port = int(device.get("mbox_port") or 0)
+    p._port = port
+    pidfile = _pidfile(device)
+    # Laeuft der Dienst schon (z.B. vom zweiten uvicorn-Worker gestartet)? Dann uebernehmen statt doppelt starten.
+    if port and _port_open(port):
+        log_file.close()
+        p.external_pid = _pid_on_port(port)
+        if not p.external_pid:
+            try:
+                p.external_pid = int(pidfile.read_text().strip() or 0) or -1
+            except Exception:
+                p.external_pid = -1
+        p.process = None
+        p.config_sig = _config_sig(device)
+        p.started_at = datetime.now(timezone.utc).isoformat()
+        p._port_check = (time.monotonic(), True)
+        logger.info(f"M-Box Dienst {device.get('serial_number')} laeuft bereits auf Port {port} (pid {p.external_pid}) - uebernommen")
+        return p
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
@@ -251,14 +326,32 @@ async def _spawn(device: dict) -> _Proc:
         )
     finally:
         log_file.close()
+    p.external_pid = None
+    try:
+        pidfile.write_text(str(p.process.pid))
+    except Exception:
+        pass
+    # Rennen zweier Worker: stirbt unser Prozess sofort (EADDRINUSE) und der Port ist belegt -> fremden Dienst uebernehmen
+    await asyncio.sleep(1.5)
+    if p.process.poll() is not None and port and _port_open(port):
+        other = _pid_on_port(port)
+        if not other:
+            try:
+                other = int(pidfile.read_text().strip() or 0)
+            except Exception:
+                other = 0
+        p.external_pid = other if other and other != p.process.pid else -1
+        p.process = None
+        p._port_check = (time.monotonic(), True)
+        logger.info(f"M-Box Dienst {device.get('serial_number')}: Port {port} bereits von anderem Worker belegt - uebernommen")
     p.config_sig = _config_sig(device)
     p.started_at = datetime.now(timezone.utc).isoformat()
-    logger.info(f"M-Box Dienst gestartet: {device.get('serial_number')} pid={p.process.pid} port={device.get('mbox_port')}")
+    logger.info(f"M-Box Dienst gestartet: {device.get('serial_number')} pid={p.process.pid if p.process else p.external_pid} port={port}")
     return p
 
 
 async def _kill(p: _Proc):
-    if _proc_alive(p):
+    if p.process is not None and p.process.poll() is None:
         try:
             p.process.terminate()
             await asyncio.to_thread(p.process.wait, 5)
@@ -268,7 +361,18 @@ async def _kill(p: _Proc):
                 await asyncio.to_thread(p.process.wait, 5)
             except Exception:
                 pass
+    elif p.external_pid:
+        # Dienst gehoert einem anderen Worker -> PID frisch ueber den Port ermitteln (pid-Datei kann veraltet sein) und beenden
+        pid = _pid_on_port(p._port or 0) or (p.external_pid if p.external_pid > 0 else 0)
+        if pid > 0:
+            await asyncio.to_thread(_kill_pid, pid)
+        for _ in range(10):
+            if not _port_open(p._port or 0):
+                break
+            await asyncio.sleep(0.5)
     p.process = None
+    p.external_pid = None
+    p._port_check = (0.0, False)
 
 
 async def ensure_running(device: dict) -> _Proc:
@@ -287,7 +391,7 @@ async def ensure_running(device: dict) -> _Proc:
                 hint = ""
                 if p.restarts >= 5:
                     hint = (f" Der Dienst ist {p.restarts}x direkt nach dem Start abgestuerzt (Exit-Code {p.process.poll() if p.process else '?'}) - "
-                            f"Ursache im Dienst-Log {p.log_path or ''} (typisch: Node.js zu alt, node-opcua braucht >= 20.19/22.12).")
+                            f"Ursache im Dienst-Log {p.log_path or ''} (z.B. Port bereits belegt, Node.js zu alt, Paket fehlt).")
                 raise HTTPException(status_code=503, detail="M-Box Dienst startet gerade neu, bitte kurz warten." + hint)
             p.restarts += 1
         try:
@@ -350,11 +454,12 @@ def runtime_status(device: dict) -> dict:
     p = _procs.get(device["id"])
     return {
         "running": bool(p and _proc_alive(p)),
-        "pid": p.process.pid if p and _proc_alive(p) else None,
+        "pid": (p.process.pid if p.process else p.external_pid) if p and _proc_alive(p) else None,
         "started_at": p.started_at if p else None,
         "restarts": p.restarts if p else 0,
         "port": device.get("mbox_port"),
         "exit_code": (p.process.poll() if p and p.process else None),
+        "shared": bool(p and p.external_pid),
         "last_error": p.last_error if p else None,
     }
 
