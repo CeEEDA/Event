@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 PROFILE_DIR = Path(__file__).resolve().parent / "audio_profiles"
 DEFAULT_PROFILE = PROFILE_DIR / "ambience_lobby.wav"
 SR = 48000
+PRE_SEC = 0.75  # Einschwing-Vorspann vor dem ersten Wort (wird am Ende abgeschnitten)
 
 
 def _ff(args: list, timeout: int = 600):
@@ -97,20 +98,24 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
                          freq_mask_smooth_hz=800, time_mask_smooth_ms=250, thresh_n_mult_nonstationary=2.5)
     y = yy[len(warm):]
     info["passes"] += 1
-    # Bis zum ersten Wort alles abschneiden (0,15 s Vorlauf + 60 ms Einblenden), nach dem letzten Wort 0,4 s behalten
+    # Bis zum ersten Wort abschneiden (0,35 s Vorlauf + 60 ms Einblenden, damit weiche Anlaute wie S/F/Sch erhalten bleiben), Nachlauf 0,4 s
     onset2, offset2, _ = _speech_bounds(y, sr)
-    keep_in, keep_out, fade = int(0.15 * sr), int(0.4 * sr), int(0.06 * sr)
+    keep_in, keep_out, fade = int(0.35 * sr), int(0.4 * sr), int(0.06 * sr)
     start = max(0, onset2 - keep_in)
     end = min(len(y), offset2 + keep_out)
+    pre = np.zeros(int(PRE_SEC * sr), dtype=y.dtype)
     if end - start > sr // 2:
         if start > 0:
             info["lead_cut_sec"] = round(start / sr, 2)
         if end < len(y):
             info["tail_cut_sec"] = round((len(y) - end) / sr, 2)
+        # gefilterter Vorlauf (leise Raumruhe) als Einschwing-Vorspann fuer afftdn/Kompressor; wird am Ende per atrim entfernt
+        tail = y[max(0, start - len(pre)):start]
+        pre[len(pre) - len(tail):] = tail
         y = y[start:end].copy()
         y[:fade] *= np.linspace(0.0, 1.0, fade, dtype=y.dtype)
         y[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
-    y = np.clip(y, -1.0, 1.0)
+    y = np.clip(np.concatenate([pre, y]), -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
     return info
 
@@ -134,7 +139,7 @@ def enhance_speech(src: Path, dst: Path, profile: Optional[Path] = DEFAULT_PROFI
         tmp = dst.with_suffix(".stage3.wav")
         _ff(["-i", str(stage), "-af", ",".join(filters), "-c:a", "pcm_s16le", str(tmp)])
         gain = -_peak_db(tmp)
-        _ff(["-i", str(tmp), "-af", f"volume={gain:.2f}dB,alimiter=limit=0.999", "-codec:a", "libmp3lame", "-b:a", "192k", str(dst)])
+        _ff(["-i", str(tmp), "-af", f"atrim=start={PRE_SEC if stage is gated else 0},asetpts=PTS-STARTPTS,volume={gain:.2f}dB,alimiter=limit=0.999", "-codec:a", "libmp3lame", "-b:a", "192k", str(dst)])
         tmp.unlink(missing_ok=True)
         after_peak = _peak_db(dst)
         return {"enhanced": True, "before": {"max_volume_db": before_peak}, "after": {"max_volume_db": after_peak},
