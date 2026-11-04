@@ -20,6 +20,13 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Messe-Modul: QR-Code-Demo am Lichtmast ohne Login)
+- Neue Kachel „Messe" in der Verwaltung (adminOnly) -> `/verwaltung/messe` (`pages/MessePage.jsx`, `components/messe/MesseDetail|MesseAudio|MesseQr.jsx`). Messe anlegen (Name, Ort, Von/Bis, Besucher-Hinweis), M-Boxen aus dem Geraetestamm per Klick zuordnen, Testdurchsagen hochladen (ffmpeg-Normalisierung wie Auftrags-Audio, GridFS `messe<id8>_<fid8>.mp3`, Collection `messe_audio`), pro Mast QR-Code (qrcode.react) + „Alle drucken" (Druckfenster), Link kopieren/oeffnen, Switch freigeschaltet/gesperrt (public -> 410), „Neuen Link erzeugen" (Token rotiert, alte QR ungueltig), „Messe archivieren" (Soft-Delete `deleted_at`).
+- Backend `routes/messe.py` Prefix `/api/messe`: Staff-CRUD + Audio; oeffentlich ohne Auth `/api/messe/public/{token}` (Uebersicht), `/{device_id}/status` (liest `DB_HMI.Status.Lampe`, `Lampen_Auswahl`, Pi-Status), `POST .../lampe` ({index:1-5} -> Lampe_Umschalten, {action:ein|aus} -> Lampen_Ein/Aus), `POST .../play` ({fid}) / `.../stop` -> Pi-Kommando. IP-Rate-Limit 40/min je Mast, Audit-Log als „Messe-Besucher (<Messe>)". Collection `messen` (public_token = secrets.token_urlsafe).
+- Oeffentliche Seite `/messe/:token[/:deviceId]` (`pages/MessePublicPage.jsx`, dunkler Kopf, mobil): Mastwahl, 5 Lampen-Buttons + Alle ein/aus, Durchsage abspielen/Stopp, Status-Polling 3 s; 401-Interceptor in `lib/api.js` ignoriert `/messe/`.
+- Messe-Dateien landen im Pi-Manifest (`mbox_pi.device_manifest` -> `messe.messe_manifest_entries`, `mbox_pi_audio_download` akzeptiert Prefix `messe`), erscheinen aber NICHT im Geraete-Monitor (`mbox_audio_status` filtert `messe_id`). Test-Messe im Preview: „Interschau 2026" (id 6d5d1ee0…, M-Box_001, Audio „Messe Testansage"). Testing-Agent iteration_92: 20/20 Backend + Admin/Public-Frontend gruen.
+
+
 ### 2026-06 (Live: NotImplementedError beim Start des M-Box Node-Dienstes)
 - Ursache: Auf dem Windows-Live-Server laeuft uvicorn mit der WindowsSelectorEventLoop (uvicorn setzt sie bei --workers/--reload) -> `asyncio.create_subprocess_exec` wirft `NotImplementedError`. Fix in `routes/mbox.py`: Node-Prozesse per `subprocess.Popen` (loop-unabhaengig), `_proc_alive` via `poll()`, `_kill` wartet in `asyncio.to_thread`, npm install via `asyncio.to_thread(subprocess.run)`. Keine asyncio-Subprozesse mehr im Backend. Preview: Dienste laufen (pid), 40 Tests gruen.
 

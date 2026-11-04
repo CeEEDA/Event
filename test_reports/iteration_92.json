@@ -1,0 +1,40 @@
+{
+  "summary": "Messe-Modul E2E getestet. Backend: 20/20 pytest bestanden (CRUD, device_ids-Filter, Audio upload->processing->ready mit sha256/duration, .txt 400, rename/stream/delete, public overview/status/lampe/play/stop inkl. 404/410/400, Kunde 403, ohne Token 401/403, Lifecycle active->410, new-link->alter Token 404, archivieren->404). Pi-Manifest von M-Box_001 enthaelt messe6d5d1ee0_be40347a.mp3 mit messe_id; /api/mbox/{id}/audio zeigt nur testansage.mp3 (plus keine messe-Dateien). Frontend Admin (1920px): Kachel -> /verwaltung/messe, Neue Messe anlegen -> Detail, MBOX-TEST-1 auswaehlen (Zaehler '1 ausgewaehlt', Haekchen), QR-Karte + Drucken-Button, Audio-Upload 'wird verarbeitet' -> 'bereit' (146 s), Switch sperrt (public 410)/entsperrt (200), Neuer Link mit Dialog (Token geaendert, QR aktualisiert), Oeffnen-Button oeffnet public control, Archivieren mit Dialog -> zurueck zur Liste, public 404. Verwaltung zeigt weiterhin Ausgangsrechnungen/Dokumentenverwaltung. Frontend public (390px, ohne Login): Mastliste, Steuerung, Lampen 1-5 + Alle ein/aus disabled (SPS offline, Fehlerhinweis sichtbar), Play/Stopp -> Toast 'Pi ist offline...', ungueltiger Token und fremdes Geraet -> messe-public-error, kein Redirect zu /login. Keine Funktionsfehler gefunden.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/messe/public/{token}/{device_id}/play|stop", "issue": "Bei Pi offline werden anonyme Besucher-Befehle in mbox_pi_commands gequeued und spaeter (evtl. Stunden spaeter) ausgefuehrt, sobald der Pi wieder online ist. Fuer oeffentliche Messe-Befehle sollte man bei offline-Pi nicht queuen oder ein Ablaufdatum (z.B. 30 s) setzen."},
+      {"endpoint": "GET /api/messe/public/{token}/{device_id}/status", "issue": "Nicht rate-limitiert; jeder Besucher pollt alle 3 s und jeder Poll loest einen OPC-UA-Verbindungsversuch (bis 8 s) aus -> bei vielen Besuchern hohe Last auf SPS/Backend. Status-Ergebnis pro Geraet kurz (2-3 s) cachen."},
+      {"endpoint": "DELETE /api/messe/{id}", "issue": "Archivieren laesst messe_audio-Dokumente und GridFS-Dateien liegen (ok fuer Soft-Delete, aber keine Bereinigung)."},
+      {"endpoint": "Berechtigung", "issue": "Backend _staff erlaubt role=mitarbeiter fuer alle Messe-Endpunkte und Route /verwaltung/messe ist nur ProtectedRoute, aber die Kachel ist adminOnly -> inkonsistent (Mitarbeiter kann per URL zugreifen). Entscheiden: entweder Backend auf admin beschraenken oder Kachel freigeben."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Messe-Detail QR-Karte (1920px, lg 2-spaltig)", "issues": ["QR-Kachel ist sehr schmal: Mastname 'Lichtmast Test 1' wird auf 'Lichtmast' abgeschnitten und URL bricht unschoen in 2 Zeilen; Karte sollte volle Breite (sm:grid-cols-1 bei lg) oder groessere min-width haben"]},
+      {"screen": "Messe-Detail Testdurchsagen", "issues": ["Bezeichnungs-Input zwischen File-Input und Hochladen-Button ist so gestaucht, dass Placeholder nur 'Beze' zeigt"]},
+      {"screen": "Messe anlegen / Detail Datum", "issues": ["Native Browser-Datepicker (input type=date) statt shadcn Calendar; Anzeige im US-Format 04/01/2026 statt deutsch"]},
+      {"screen": "Messe-Detail Audio", "issues": ["Loeschen einer Testdurchsage ohne Bestaetigungsdialog"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_messe_iteration92.py", "/app/test_reports/pytest/pytest_messe_iter92.xml"],
+  "action_items": [
+    "Optional: oeffentliche play/stop-Befehle bei offline-Pi nicht queuen bzw. mit Ablaufzeit versehen",
+    "Optional: public status-Endpoint pro Geraet cachen / rate-limiten",
+    "Rollen-Konsistenz Messe (Backend erlaubt Mitarbeiter, UI nur Admin) klaeren",
+    "Design: QR-Karte breiter, Audio-Bezeichnungsfeld breiter, shadcn Datepicker, Confirm beim Audio-Loeschen"
+  ],
+  "critical_code_review_comments": [
+    "messe.py public_lampe: _rate_public greift erst nach _public_device (ok), aber status-Endpoint hat kein Rate-Limit",
+    "x-forwarded-for wird ungeprueft fuer Rate-Limit-Key genutzt -> leicht umgehbar durch gespoofte Header",
+    "stream_messe_audio: JWT im Query-String (wie bestehendes Muster) landet in Logs/History"
+  ],
+  "updated_files": ["/app/backend/tests/test_messe_iteration92.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Angelegt und wieder archiviert: TEST_Messe Pytest, TEST_Messe Lifecycle, TEST_UI Messe (inkl. Audio TEST_UI Ansage, bleibt als messe_audio des archivierten Eintrags). Bestehende Messe 6d5d1ee0 nicht veraendert; dort nur public play/stop/lampe aufgerufen (erzeugt Pi-Kommandos fuer M-Box_001 in Queue).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Regressionstest: pytest /app/backend/tests/test_messe_iteration92.py (REACT_APP_BACKEND_URL exportieren). Manifest-Check: device_manifest(db, M-Box_001) enthaelt messe-Eintrag. Keine SPS/Pi im Preview -> Timeouts/Pi-offline erwartet."
+}
