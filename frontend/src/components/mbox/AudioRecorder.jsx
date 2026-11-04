@@ -99,9 +99,9 @@ export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdu
         <div className="space-y-3">
           <audio controls src={url.current} className="w-full h-10" data-testid="recorder-preview" />
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="Bezeichnung" className="h-9" data-testid="recorder-name" />
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={reset} disabled={busy} data-testid="recorder-redo"><RotateCcw className="w-4 h-4 mr-1" /> Neu aufnehmen</Button>
-            <Button type="button" onClick={save} disabled={busy} className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="recorder-save">
+          <div className="flex flex-col-reverse sm:flex-row gap-2">
+            <Button type="button" variant="outline" onClick={reset} disabled={busy} className="w-full sm:w-auto" data-testid="recorder-redo"><RotateCcw className="w-4 h-4 mr-1" /> Neu aufnehmen</Button>
+            <Button type="button" onClick={save} disabled={busy} className="w-full sm:flex-1 h-11 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold" data-testid="recorder-save">
               {busy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />} {busy ? "wird verarbeitet …" : "Optimieren & speichern"}
             </Button>
           </div>
