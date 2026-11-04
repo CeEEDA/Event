@@ -28,6 +28,7 @@ import KiTrainingPage from "./pages/KiTrainingPage";
 import InventoryPage from "./pages/InventoryPage";
 import MessePage from "./pages/MessePage";
 import MessePublicPage from "./pages/MessePublicPage";
+import MesseDurchsagePage from "./pages/MesseDurchsagePage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -269,6 +270,7 @@ function AppRoutes() {
         }
       />
       <Route path="/messe/:token" element={<MessePublicPage />} />
+      <Route path="/messe/:token/durchsage" element={<MesseDurchsagePage />} />
       <Route path="/messe/:token/:deviceId" element={<MessePublicPage />} />
       <Route
         path="/orders"

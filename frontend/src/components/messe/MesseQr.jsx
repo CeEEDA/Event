@@ -32,7 +32,7 @@ export function MesseQr({ messe }) {
             h1{font-size:26pt;margin:0 0 4mm} h2{font-size:18pt;margin:0 0 8mm;color:#444} p{font-size:12pt;margin:6mm 0 0;color:#666} svg{width:70mm;height:70mm}`}</style>
         </head>
         <body>
-          {karte("messe", messe.name, messe.location || "Messe-Demo", publicUrl(messe), "QR-Code scannen – alle Lichtmasten der Messe sehen, Lampen schalten und Testdurchsage abspielen.")}
+          {karte("messe", messe.name, messe.location || "Messe-Demo", publicUrl(messe), "QR-Code scannen – alle Geräte der Messe sehen, Lampen schalten und Testdurchsage abspielen.")}
           {devices.map(d => karte(d.id, d.name, `${messe.name}${messe.location ? ` · ${messe.location}` : ""}`, publicUrl(messe, d.id), "QR-Code scannen – Lampen schalten und Testdurchsage abspielen."))}
         </body>
       </html>
@@ -65,8 +65,8 @@ export function MesseQr({ messe }) {
     <Karte titel="QR-Codes" testId="messe-qr"
       action={<Button size="sm" variant="outline" onClick={print} data-testid="messe-qr-print-btn"><Printer className="w-4 h-4 mr-1" /> Alle drucken</Button>}>
       <div className="grid gap-3">
-        <QrKarte url={publicUrl(messe)} titel={`Messe: ${messe.name}`} sub="Zeigt alle verknüpften Lichtmasten und Durchsagen" testKey="messe" hervor />
-        {devices.map(d => <QrKarte key={d.id} url={publicUrl(messe, d.id)} titel={d.name} sub="Direkt dieser Lichtmast" testKey={d.serial_number} />)}
+        <QrKarte url={publicUrl(messe)} titel={`Messe: ${messe.name}`} sub="Zeigt alle verknüpften Geräte und Durchsagen" testKey="messe" hervor />
+        {devices.map(d => <QrKarte key={d.id} url={publicUrl(messe, d.id)} titel={d.name} sub="Direkt dieses Gerät" testKey={d.serial_number} />)}
       </div>
       {devices.length === 0 && <p className="text-xs text-gray-400 mt-3">Noch keine M-Box ausgewählt – der Messe-Code zeigt dann eine leere Mastliste.</p>}
     </Karte>

@@ -2,12 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { Lightbulb, Volume2, Square, Radio, AlertCircle, ChevronRight, WifiOff } from "lucide-react";
-import { BACKEND_URL } from "../lib/api";
-import { Logo } from "../components/Logo";
-
-const base = `${BACKEND_URL}/api/messe/public`;
-const errText = (e, fb) => e.response?.data?.detail || fb;
+import { Lightbulb, Volume2, Square, Radio, ChevronRight, WifiOff, Megaphone } from "lucide-react";
+import { Shell, Hinweis, PUBLIC_BASE as base, errText } from "../components/messe/MessePublicShell";
 
 export default function MessePublicPage() {
   const { token, deviceId } = useParams();
@@ -19,13 +15,22 @@ export default function MessePublicPage() {
     axios.get(`${base}/${token}`).then(r => setMesse(r.data)).catch(e => setError(errText(e, "Seite nicht erreichbar")));
   }, [token]);
 
-  if (error) return <Shell><Hinweis icon={AlertCircle} titel={error} text="Bitte wenden Sie sich an das Standpersonal von Eventenergie." /></Shell>;
+  if (error) return <Shell><Hinweis titel={error} text="Bitte wenden Sie sich an das Standpersonal von Eventenergie." /></Shell>;
   if (!messe) return <Shell><p className="text-center text-sm text-gray-400 py-12">Laden …</p></Shell>;
 
   if (!deviceId) {
     return (
       <Shell messe={messe}>
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-3">Lichtmast wählen</h2>
+        {messe.audio.length > 0 && (
+          <button onClick={() => navigate(`/messe/${token}/durchsage`)} data-testid="messe-public-durchsage-btn"
+            className="w-full mb-6 h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center gap-3 px-5 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] transition">
+            <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><Megaphone className="w-5 h-5" /></span>
+            <span className="flex-1 text-left">Durchsage</span>
+            <span className="text-xs font-normal opacity-80">{messe.audio.length} Datei(en) · {messe.devices.length} Gerät(e)</span>
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        )}
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-3">Gerät wählen</h2>
         <div className="space-y-2" data-testid="messe-public-device-list">
           {messe.devices.map(d => (
             <button key={d.id} onClick={() => navigate(`/messe/${token}/${d.id}`)} data-testid={`messe-public-device-${d.id}`}
@@ -35,61 +40,21 @@ export default function MessePublicPage() {
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </button>
           ))}
-          {messe.devices.length === 0 && <p className="text-sm text-gray-400">Aktuell ist kein Lichtmast freigeschaltet.</p>}
+          {messe.devices.length === 0 && <p className="text-sm text-gray-400">Aktuell ist kein Gerät freigeschaltet.</p>}
         </div>
-        {messe.audio.length > 0 && (
-          <div className="mt-6" data-testid="messe-public-audio-overview">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-2">Verfügbare Durchsagen</h2>
-            <ul className="bg-white border border-gray-200 rounded-2xl divide-y divide-gray-100">
-              {messe.audio.map(f => (
-                <li key={f.id} className="px-4 py-3 flex items-center gap-3 text-sm text-gray-800"><Volume2 className="w-4 h-4 text-fuchsia-500" /><span className="flex-1 truncate">{f.name}</span>{f.duration_sec && <span className="text-xs text-gray-400">{Math.round(f.duration_sec)} s</span>}</li>
-              ))}
-            </ul>
-            <p className="text-xs text-gray-400 mt-2">Lichtmast wählen, um Lampen zu schalten und eine Durchsage abzuspielen.</p>
-          </div>
-        )}
+        <p className="text-xs text-gray-400 mt-3">Gerät wählen, um die Lampen zu schalten.</p>
       </Shell>
     );
   }
 
   if (!messe.devices.some(d => d.id === deviceId)) {
-    return <Shell messe={messe}><Hinweis icon={AlertCircle} titel="Dieser Lichtmast gehört nicht zur Messe" text="Bitte den QR-Code am Mast erneut scannen." /></Shell>;
+    return <Shell messe={messe}><Hinweis titel="Dieses Gerät gehört nicht zur Messe" text="Bitte den QR-Code am Gerät erneut scannen." /></Shell>;
   }
 
-  return <Shell messe={messe}><MastSteuerung token={token} deviceId={deviceId} audio={messe.audio} mehrere={messe.devices.length > 1} /></Shell>;
+  return <Shell messe={messe}><GeraetSteuerung token={token} deviceId={deviceId} audio={messe.audio} mehrere={messe.devices.length > 1} /></Shell>;
 }
 
-function Shell({ messe, children }) {
-  return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col" data-testid="messe-public-page">
-      <header className="px-5 pt-6 pb-4">
-        <div className="bg-white rounded-2xl px-4 py-3 inline-flex"><Logo size="small" /></div>
-        {messe && (
-          <div className="mt-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-fuchsia-400 font-semibold">Messe-Demo</p>
-            <h1 className="text-2xl font-bold leading-tight mt-1" data-testid="messe-public-title">{messe.name}</h1>
-            {messe.location && <p className="text-sm text-gray-400">{messe.location}</p>}
-            {messe.note && <p className="text-sm text-gray-300 mt-2 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2" data-testid="messe-public-note">{messe.note}</p>}
-          </div>
-        )}
-      </header>
-      <main className="flex-1 bg-gray-50 text-gray-900 rounded-t-3xl px-5 pt-6 pb-10">{children}</main>
-      <footer className="bg-gray-50 text-center text-[11px] text-gray-400 pb-5">Eventenergie Deutschland GmbH &amp; Co. KG · M-Box Lichtmast</footer>
-    </div>
-  );
-}
-
-function Hinweis({ icon: Icon, titel, text }) {
-  return (
-    <div className="text-center py-10" data-testid="messe-public-error">
-      <Icon className="w-12 h-12 text-red-400 mx-auto mb-3" />
-      <h2 className="text-lg font-semibold text-gray-900">{titel}</h2>
-      <p className="text-sm text-gray-500 mt-1">{text}</p>
-    </div>
-  );
-}
-
-function MastSteuerung({ token, deviceId, audio, mehrere }) {
+function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
   const navigate = useNavigate();
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -137,10 +102,10 @@ function MastSteuerung({ token, deviceId, audio, mehrere }) {
     <div className="space-y-5" data-testid="messe-public-control">
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <p className="text-xs text-gray-400">Lichtmast</p>
+          <p className="text-xs text-gray-400">Gerät</p>
           <h2 className="text-xl font-bold text-gray-900" data-testid="messe-public-device-name">{st?.name || "…"}</h2>
         </div>
-        {mehrere && <button onClick={() => navigate(`/messe/${token}`)} className="text-xs text-fuchsia-600 underline" data-testid="messe-public-switch-device">anderer Mast</button>}
+        {mehrere && <button onClick={() => navigate(`/messe/${token}`)} className="text-xs text-fuchsia-600 underline" data-testid="messe-public-switch-device">anderes Gerät</button>}
         <span className={`text-[11px] px-2 py-1 rounded-full font-medium ${spsOk ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-500"}`} data-testid="messe-public-sps-state">
           {st ? (spsOk ? "verbunden" : "Steuerung offline") : "verbinde …"}
         </span>
@@ -176,7 +141,7 @@ function MastSteuerung({ token, deviceId, audio, mehrere }) {
 
       <section className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm" data-testid="messe-public-audio">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2"><Volume2 className="w-4 h-4 text-fuchsia-500" /> Testdurchsage</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2"><Volume2 className="w-4 h-4 text-fuchsia-500" /> Durchsage an diesem Gerät</h3>
           <span className={`text-[11px] px-2 py-1 rounded-full font-medium ${st?.pi_online ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-500"}`} data-testid="messe-public-pi-state">
             {st?.playing ? `spielt: ${st.playing.label || st.playing.file}` : st?.pi_online ? "bereit" : "Lautsprecher offline"}
           </span>
@@ -198,6 +163,7 @@ function MastSteuerung({ token, deviceId, audio, mehrere }) {
             </button>
           )}
         </div>
+        {mehrere && <button onClick={() => navigate(`/messe/${token}/durchsage`)} className="mt-3 text-xs text-fuchsia-600 underline flex items-center gap-1" data-testid="messe-public-to-durchsage"><Megaphone className="w-3.5 h-3.5" /> Durchsage auf mehreren Geräten gleichzeitig</button>}
       </section>
     </div>
   );

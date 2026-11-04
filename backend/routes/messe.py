@@ -8,7 +8,7 @@ import tempfile
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -375,3 +375,51 @@ async def public_stop(token: str, device_id: str, request: Request):
     m, device = await _public_device(token, device_id)
     _rate_public(request, device_id)
     return await _pi_command(device, {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}, "stop", {})
+
+
+GROUP_COUNTDOWN_SEC = 5
+
+
+@router.post("/public/{token}/group-play")
+async def public_group_play(token: str, body: dict, request: Request):
+    """Durchsage auf mehreren Geraeten zeitgleich starten: Countdown 5 s, Pis starten bei 0 (start_at)."""
+    m = await _messe_by_token(token)
+    _rate_public(request, f"group:{m['id']}")
+    f = await db.messe_audio.find_one({"id": str(body.get("fid") or ""), "messe_id": m["id"],
+                                       "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="Durchsage nicht gefunden")
+    wanted = [str(x) for x in (body.get("device_ids") or []) if str(x) in (m.get("device_ids") or [])]
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Mindestens ein Geraet auswaehlen")
+    devices = await db.devices.find({"id": {"$in": wanted}, "device_type": "mbox"}, {"_id": 0}).to_list(100)
+    now_dt = datetime.now(timezone.utc)
+    start_at = (now_dt + timedelta(seconds=GROUP_COUNTDOWN_SEC)).isoformat()
+    actor = {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}
+    docs = [{"id": str(uuid.uuid4()), "device_id": d["id"], "command": "play", "status": "pending", "messe_id": m["id"],
+             "params": {"file": f["stored"], "sha256": f.get("sha256"), "loop": False, "start_at": start_at, "label": f["name"]},
+             "user_id": actor["id"], "user_name": actor["name"], "created_at": now_dt.isoformat()} for d in devices]
+    await db.mbox_pi_commands.insert_many(docs)
+    offline = []
+    for d in devices:
+        online = mbox_pi.pi_state(d)["online"]
+        if not online:
+            offline.append(d.get("user_field") or d.get("serial_number"))
+        await _audit(d, actor, "messe/durchsage/start", {"file": f["name"], "start_at": start_at}, {"ok": online, "fehler": None if online else "Pi offline"})
+    return {"ok": True, "start_at": start_at, "server_time": now_dt.isoformat(), "countdown_sec": GROUP_COUNTDOWN_SEC,
+            "devices": len(devices), "offline": offline, "label": f["name"]}
+
+
+@router.post("/public/{token}/group-stop")
+async def public_group_stop(token: str, body: dict, request: Request):
+    m = await _messe_by_token(token)
+    _rate_public(request, f"group:{m['id']}")
+    wanted = [str(x) for x in (body.get("device_ids") or [])] or (m.get("device_ids") or [])
+    ids = [i for i in wanted if i in (m.get("device_ids") or [])]
+    now = _now()
+    actor = {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}
+    docs = [{"id": str(uuid.uuid4()), "device_id": did, "command": "stop", "params": {}, "status": "pending", "messe_id": m["id"],
+             "user_id": actor["id"], "user_name": actor["name"], "created_at": now} for did in ids]
+    if docs:
+        await db.mbox_pi_commands.insert_many(docs)
+    return {"ok": True, "devices": len(docs)}
