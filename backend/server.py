@@ -2100,6 +2100,10 @@ from routes.mbox_audio import router as mbox_audio_router, init_mbox_audio_route
 init_mbox_audio_routes(db, decode_jwt_token)
 app.include_router(mbox_audio_router)
 
+from routes.messe import router as messe_router, init_messe_routes
+init_messe_routes(db)
+app.include_router(messe_router)
+
 from routes.tank_pi import router as tank_router, init_tank_routes
 init_tank_routes(db, decode_jwt_token)
 app.include_router(tank_router)

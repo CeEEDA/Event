@@ -779,7 +779,7 @@ async def mbox_pi_audio_download(device_id: str, name: str, api_key: str = ""):
     device = await _device(device_id)
     mbox_pi.verify_pi_key(device, api_key)
     safe = os.path.basename(name)
-    if safe.startswith("order"):
+    if safe.startswith(("order", "messe")):
         from routes.mbox_audio import load_bytes
         from fastapi.responses import Response
         data = await load_bytes(safe)
@@ -808,7 +808,7 @@ async def mbox_audio_status(device_id: str, user: dict = Depends(get_user)):
     device = await _device(device_id)
     last = await db.mbox_pi_commands.find({"device_id": device_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
     # Geraeteseite: nur Standarddateien (Testansage). Kunden-Durchsagen gehoeren in den Auftrag / die Durchsagen-Seite.
-    files = [m for m in await mbox_pi.device_manifest(db, device_id) if not m.get("order_pk")]
+    files = [m for m in await mbox_pi.device_manifest(db, device_id) if not m.get("order_pk") and not m.get("messe_id")]
     return {"pi": mbox_pi.pi_state(device), "files": files, "commands": last}
 
 

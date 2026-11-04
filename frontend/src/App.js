@@ -26,6 +26,8 @@ import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminGpsDiagnosePage from "./pages/AdminGpsDiagnosePage";
 import KiTrainingPage from "./pages/KiTrainingPage";
 import InventoryPage from "./pages/InventoryPage";
+import MessePage from "./pages/MessePage";
+import MessePublicPage from "./pages/MessePublicPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -258,6 +260,16 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/verwaltung/messe"
+        element={
+          <ProtectedRoute>
+            <MessePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/messe/:token" element={<MessePublicPage />} />
+      <Route path="/messe/:token/:deviceId" element={<MessePublicPage />} />
       <Route
         path="/orders"
         element={

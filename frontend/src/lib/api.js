@@ -42,7 +42,8 @@ api.interceptors.response.use(
       localStorage.removeItem("token");
       if (window.location.pathname !== "/login" && 
           window.location.pathname !== "/register" &&
-          !window.location.pathname.startsWith("/share/")) {
+          !window.location.pathname.startsWith("/share/") &&
+          !window.location.pathname.startsWith("/messe/")) {
         window.location.href = "/login";
       }
     }

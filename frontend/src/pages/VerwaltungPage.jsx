@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap, FileText, Package } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap, FileText, Package, Presentation } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -57,6 +57,15 @@ export default function VerwaltungPage() {
       icon: Zap,
       color: "fuchsia",
       path: "/ki-training",
+      adminOnly: true,
+    },
+    {
+      key: "messe",
+      label: "Messe",
+      description: "M-Boxen für den Messeauftritt, Testdurchsagen und QR-Codes für Besucher",
+      icon: Presentation,
+      color: "amber",
+      path: "/verwaltung/messe",
       adminOnly: true,
     },
     {

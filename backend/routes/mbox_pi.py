@@ -454,6 +454,8 @@ async def device_manifest(db, device_id: str) -> list:
             for f in files:
                 if f["order_pk"] in assigned_pks:
                     out.append({"name": f["stored"], "sha256": f["sha256"], "size": f["size"], "label": f["name"], "order_pk": f["order_pk"]})
+    from routes.messe import messe_manifest_entries
+    out += await messe_manifest_entries(device_id)
     _manifest_cache[device_id] = (_t.monotonic(), out)
     return out
 
