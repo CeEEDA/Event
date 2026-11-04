@@ -41,7 +41,8 @@ def _load_wav(path: Path):
 
 
 def _speech_bounds(y, sr: int):
-    """Erster/letzter Sprachanteil (Sample-Index) ueber RMS-Rahmen von 50 ms; Schwelle = Rauschteppich + 12 dB."""
+    """Erster/letzter Sprachanteil (Sample-Index) ueber RMS-Rahmen von 50 ms.
+    Schwelle = max(Rauschteppich + 12 dB, Sprachpegel (90. Perzentil) - 12 dB) -> leises Vorgeraeusch zaehlt nicht als Sprache."""
     import numpy as np
     frame = int(0.05 * sr)
     n = len(y) // frame
@@ -49,8 +50,13 @@ def _speech_bounds(y, sr: int):
         return 0, len(y), 0.0
     rms = np.sqrt(np.mean(np.square(y[:n * frame].reshape(n, frame)), axis=1)) + 1e-9
     floor = float(np.percentile(rms, 15))
-    thresh = max(floor * 4.0, 0.004)
-    above = rms > thresh
+    speech = float(np.percentile(rms, 90))
+    thresh = max(floor * 4.0, speech * 0.25, 0.004)
+    # Spektrale Flachheit 150-4000 Hz: Rauschen/Atmo ~0.15-0.3, Sprache < 0.1 -> lautes Vorgeraeusch (z.B. AGC) ist keine Sprache
+    spec = np.abs(np.fft.rfft(y[:n * frame].reshape(n, frame) * np.hanning(frame), axis=1)) ** 2 + 1e-12
+    band = spec[:, (np.fft.rfftfreq(frame, 1 / sr) > 150) & (np.fft.rfftfreq(frame, 1 / sr) < 4000)]
+    flat = np.exp(np.mean(np.log(band), axis=1)) / np.mean(band, axis=1)
+    above = (rms > thresh) & (flat < 0.12)
     hits = [i for i in range(n - 2) if above[i] and above[i + 1] and above[i + 2]]
     if not hits:
         return 0, len(y), floor
@@ -64,8 +70,8 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
     y, sr = _load_wav(src_wav)
     info = {"profile": None, "passes": 0}
     onset, offset, _floor = _speech_bounds(y, sr)
-    # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, sonst erste 0,4 s) als Referenz
-    lead = y[:onset] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
+    # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, max. 1 s; sonst erste 0,4 s) als Referenz
+    lead = y[:min(onset, sr)] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
     noise_parts = []
     if profile and profile.exists():
         prof_wav = dst_wav.with_suffix(".profile.wav")
@@ -91,20 +97,19 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
                          freq_mask_smooth_hz=800, time_mask_smooth_ms=250, thresh_n_mult_nonstationary=2.5)
     y = yy[len(warm):]
     info["passes"] += 1
-    # Vor dem ersten und nach dem letzten Wort: weich ausblenden (0,25 s Vorlauf bleibt), damit vor dem Sprechen Ruhe ist
+    # Bis zum ersten Wort alles abschneiden (0,15 s Vorlauf + 60 ms Einblenden), nach dem letzten Wort 0,4 s behalten
     onset2, offset2, _ = _speech_bounds(y, sr)
-    keep = int(0.25 * sr)
-    fade = int(0.12 * sr)
-    if onset2 > keep + fade:
-        cut = onset2 - keep
-        y[:cut - fade] *= 0.0
-        y[cut - fade:cut] *= np.linspace(0.0, 1.0, fade, dtype=y.dtype)
-        info["lead_trim_sec"] = round(cut / sr, 2)
-    if offset2 + keep + fade < len(y):
-        cut = offset2 + keep
-        y[cut:cut + fade] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
-        y[cut + fade:] *= 0.0
-        info["tail_trim_sec"] = round((len(y) - cut) / sr, 2)
+    keep_in, keep_out, fade = int(0.15 * sr), int(0.4 * sr), int(0.06 * sr)
+    start = max(0, onset2 - keep_in)
+    end = min(len(y), offset2 + keep_out)
+    if end - start > sr // 2:
+        if start > 0:
+            info["lead_cut_sec"] = round(start / sr, 2)
+        if end < len(y):
+            info["tail_cut_sec"] = round((len(y) - end) / sr, 2)
+        y = y[start:end].copy()
+        y[:fade] *= np.linspace(0.0, 1.0, fade, dtype=y.dtype)
+        y[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
     y = np.clip(y, -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
     return info

@@ -34,7 +34,7 @@ export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdu
   const start = async () => {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast.error("Aufnahme wird von diesem Browser nicht unterstützt"); return; }
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } });
     } catch {
       toast.error("Kein Mikrofon-Zugriff – bitte im Browser erlauben");
       return;
