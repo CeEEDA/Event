@@ -119,7 +119,7 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path], prerol
     info["passes"] += 1
     # Bis zum ersten Wort abschneiden (0,35 s Vorlauf + 60 ms Einblenden, damit weiche Anlaute wie S/F/Sch erhalten bleiben), Nachlauf 0,4 s
     onset2, offset2, _ = _speech_bounds(y, sr)
-    keep_in, keep_out, fade = int(0.35 * sr), int(0.4 * sr), int(0.06 * sr)
+    keep_in, keep_out, fade = int(0.3 * sr), int(0.4 * sr), int(0.06 * sr)
     if preroll_sec and preroll_sec > 0.5:
         # alles vor dem Countdown-Ende weg (minus 0,2 s Reserve) - und bis zum im Original erkannten Sprachbeginn
         onset2 = max(onset2, int(max(0.0, preroll_sec - 0.2) * sr) + keep_in, onset_orig)
@@ -134,11 +134,14 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path], prerol
         # gefilterter Vorlauf (leise Raumruhe) als Einschwing-Vorspann fuer afftdn/Kompressor; wird am Ende per atrim entfernt
         tail = y[max(0, start - len(pre)):start]
         pre[len(pre) - len(tail):] = tail
+        # Vorspann am Ende auf 0 ausblenden -> kein Sprung/Klick an der Schnittstelle zum (bei 0 startenden) Ramp
+        fo = min(len(pre), int(0.05 * sr))
+        pre[len(pre) - fo:] *= np.linspace(1.0, 0.0, fo, dtype=y.dtype)
         y = y[start:end].copy()
         # Vorlauf nicht linear, sondern mit steiler Kurve einblenden: direkt vor dem Wort fast voll (Anlaute bleiben),
         # 0,2 s davor schon -35 dB -> aufgepumptes Mikro-Rauschen (Handy-AGC) vor dem ersten Wort ist weg
         ramp = min(len(y), onset2 - start) if onset2 > start else fade
-        y[:ramp] *= np.power(np.linspace(0.0, 1.0, ramp, dtype=y.dtype), 2.5)
+        y[:ramp] *= np.power(np.linspace(0.0, 1.0, ramp, dtype=y.dtype), 3.0)
         y[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
     y = np.clip(np.concatenate([pre, y]), -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
