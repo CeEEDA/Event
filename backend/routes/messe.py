@@ -621,6 +621,27 @@ async def public_group_play(token: str, body: dict, request: Request):
             "devices": len(devices), "offline": offline, "label": f["name"]}
 
 
+@router.get("/{messe_id}/sps-check")
+async def messe_sps_check(messe_id: str, user: dict = Depends(get_user)):
+    """Admin/Mitarbeiter: erreicht der Server die SPS (OPC-UA) der Messe-Geraete? Liefert den technischen Grund."""
+    _staff(user)
+    m = await db.messen.find_one({"id": messe_id, "deleted_at": None}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Messe nicht gefunden")
+    devs = await _devices_of(m)
+
+    async def one(d):
+        try:
+            res = await _forward(d, "POST", "/api/lesen", json={"namen": LAMP_VARS[:1]}, timeout=15.0)
+        except HTTPException as e:
+            res = {"ok": False, "fehler": e.detail}
+        return {"id": d["id"], "name": d.get("user_field") or d.get("serial_number"), "endpoint": d.get("mbox_endpoint"),
+                "sps_ok": bool(res.get("ok")), "sps_fehler": None if res.get("ok") else res.get("fehler"),
+                "pi_online": mbox_pi.pi_state(d)["online"]}
+
+    return {"devices": list(await asyncio.gather(*(one(d) for d in devs))), "checked_at": _now()}
+
+
 @router.get("/public/{token}/group-status")
 async def public_group_status(token: str):
     """Lampenzustand aller Messe-Geraete (parallel gelesen) fuer die Beleuchtungs-Seite."""

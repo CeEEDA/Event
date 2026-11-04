@@ -317,3 +317,8 @@ German (all UI + agent responses in German only).
 - DATEV (Email routing)
 - FinTS (Banking)
 - Open-Meteo, Nominatim (weather / geocoding)
+
+## 2026-11-04 – Messe: Lampen nicht steuerbar (Live-Analyse)
+- Befund Live (`/api/messe/public/<token>/group-status`): Pi online, aber SPS `sps_fehler: "Zeitüberschreitung: Verbinden (8 s)"` → Server erreicht opc.tcp://…:4840 der M-Box 108 nicht (Netzwerk/VPN, kein Code-Fehler).
+- Neu: Admin-Endpoint `GET /api/messe/{id}/sps-check` (Staff) + Kachel „Verbindungscheck Lichtsteuerung" in MesseDetail (`MesseSpsCheck.jsx`) mit Fehlertext, Endpoint, Pi-Status, Link zur Fernbedienung.
+- Besucher-Beleuchtungsseite: neutraler Hinweis „Lichtsteuerung aktuell nicht verfügbar" + „Steuerung wird abgefragt …" während Laden (kein technischer Grund für Gäste – Nutzerwunsch).

@@ -11,6 +11,7 @@ import { useConfirm } from "../mbox/MBoxUi";
 import { MesseAudio } from "./MesseAudio";
 import { MesseQr } from "./MesseQr";
 import { MesseTeam } from "./MesseTeam";
+import { MesseSpsCheck } from "./MesseSpsCheck";
 
 export function MesseDetail({ messeId, onBack }) {
   const navigate = useNavigate();
@@ -146,6 +147,8 @@ export function MesseDetail({ messeId, onBack }) {
           </div>
           <p className="text-xs text-gray-500 mt-3">Nur ausgewählte Masten sind über die QR-Codes bedienbar. Die Testdurchsagen werden automatisch auf die Pis dieser Masten verteilt.</p>
         </Karte>
+
+        <MesseSpsCheck messeId={messeId} deviceCount={m.device_ids.length} />
 
         <MesseAudio messeId={messeId} audio={m.audio} onChange={load} />
         <MesseQr messe={m} />

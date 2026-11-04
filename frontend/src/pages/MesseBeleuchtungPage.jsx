@@ -114,7 +114,13 @@ export default function MesseBeleuchtungPage() {
             <button type="button" disabled={gesperrt} onClick={() => send("aus", { action: "aus" })} data-testid="messe-beleuchtung-aus"
               className="h-14 rounded-xl bg-white border border-gray-300 text-gray-800 font-semibold text-base active:scale-[0.98] disabled:opacity-40 transition">Alle aus</button>
           </div>
-          {!online && Object.keys(status).length > 0 && <p className="text-xs text-amber-700 mt-3" data-testid="messe-beleuchtung-offline">Kein gewähltes Gerät ist aktuell erreichbar.</p>}
+          {Object.keys(status).length === 0 && <p className="text-xs text-gray-400 mt-3" data-testid="messe-beleuchtung-laden">Steuerung wird abgefragt …</p>}
+          {!online && Object.keys(status).length > 0 && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3" data-testid="messe-beleuchtung-offline">
+              <p className="font-semibold">Lichtsteuerung aktuell nicht verfügbar.</p>
+              <p className="mt-1 text-amber-700">Bitte wenden Sie sich an das Standpersonal von Eventenergie.</p>
+            </div>
+          )}
         </section>
       </div>
     </Shell>
