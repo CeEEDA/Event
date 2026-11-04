@@ -26,13 +26,13 @@ export function MesseAudio({ messeId, audio = [], onChange }) {
     return () => clearInterval(t);
   }, [processing, onChange]);
 
-  const upload = async () => {
-    if (!file) { toast.error("Bitte Audiodatei wählen"); return; }
+  const upload = async (f = file, label = name) => {
+    if (!f) { toast.error("Bitte Audiodatei wählen"); return; }
     setBusy(true);
     try {
       const fd = new FormData();
-      fd.append("file", file);
-      fd.append("name", name);
+      fd.append("file", f);
+      fd.append("name", label);
       await api.post(`/messe/${messeId}/audio`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 });
       toast.success("Hochgeladen – wird verarbeitet");
       setFile(null); setName("");
@@ -55,7 +55,18 @@ export function MesseAudio({ messeId, audio = [], onChange }) {
     }
   };
 
+  const [drag, setDrag] = useState(false);
   const token = localStorage.getItem("token");
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDrag(false);
+    const dropped = Array.from(e.dataTransfer.files || []).filter(f => /\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(f.name));
+    if (dropped.length === 0) { toast.error("Nur Audiodateien (MP3, WAV, M4A, OGG, AAC, FLAC)"); return; }
+    if (dropped.length === 1) { setFile(dropped[0]); upload(dropped[0]); return; }
+    setName("");
+    dropped.forEach(f => upload(f, ""));
+  };
 
   return (
     <Karte titel="Testdurchsagen" testId="messe-audio">
@@ -82,15 +93,31 @@ export function MesseAudio({ messeId, audio = [], onChange }) {
         })}
       </ul>
       <div className="border-t border-gray-100 pt-3 space-y-2">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input ref={inputRef} type="file" accept=".mp3,.wav,.m4a,.ogg,.aac,.flac,audio/*" onChange={e => setFile(e.target.files?.[0] || null)}
-            className="text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-fuchsia-50 file:text-fuchsia-700 file:text-sm" data-testid="messe-audio-file-input" />
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Bezeichnung (optional)" className="h-9 sm:max-w-[200px]" data-testid="messe-audio-name-input" />
-          <Button size="sm" onClick={upload} disabled={busy || !file} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="messe-audio-upload-btn">
-            <Upload className="w-4 h-4 mr-1" /> {busy ? "lädt …" : "Hochladen"}
-          </Button>
+        <div
+          onDragOver={e => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => inputRef.current?.click()}
+          className={`rounded-xl border-2 border-dashed px-4 py-5 text-center cursor-pointer transition-colors ${drag ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-300 hover:border-fuchsia-300 bg-gray-50"}`}
+          data-testid="messe-audio-dropzone"
+        >
+          <input ref={inputRef} type="file" multiple accept=".mp3,.wav,.m4a,.ogg,.aac,.flac,audio/*" className="hidden"
+            onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length > 1) { fs.forEach(f => upload(f, "")); e.target.value = ""; } else setFile(fs[0] || null); }}
+            data-testid="messe-audio-file-input" />
+          <Upload className={`w-6 h-6 mx-auto mb-1 ${drag ? "text-fuchsia-600" : "text-gray-400"}`} />
+          <p className="text-sm text-gray-700 font-medium">{file ? file.name : drag ? "Loslassen zum Hochladen" : "Audiodatei hierher ziehen oder klicken"}</p>
+          <p className="text-xs text-gray-400 mt-0.5">MP3, WAV, M4A, OGG, AAC, FLAC · max. 25 MB · mehrere Dateien möglich</p>
         </div>
-        <p className="text-xs text-gray-500 flex items-center gap-1"><Headphones className="w-3 h-3" /> MP3/WAV/M4A, max. 25 MB. Wird normalisiert und auf alle Messe-Masten verteilt.</p>
+        {file && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Bezeichnung (optional)" className="h-9" data-testid="messe-audio-name-input" />
+            <Button size="sm" onClick={() => upload()} disabled={busy} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="messe-audio-upload-btn">
+              <Upload className="w-4 h-4 mr-1" /> {busy ? "lädt …" : "Hochladen"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setFile(null); if (inputRef.current) inputRef.current.value = ""; }} data-testid="messe-audio-clear-btn">Abbrechen</Button>
+          </div>
+        )}
+        <p className="text-xs text-gray-500 flex items-center gap-1"><Headphones className="w-3 h-3" /> Wird normalisiert und auf alle Messe-Masten verteilt.</p>
       </div>
     </Karte>
   );

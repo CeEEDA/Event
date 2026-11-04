@@ -37,6 +37,17 @@ export default function MessePublicPage() {
           ))}
           {messe.devices.length === 0 && <p className="text-sm text-gray-400">Aktuell ist kein Lichtmast freigeschaltet.</p>}
         </div>
+        {messe.audio.length > 0 && (
+          <div className="mt-6" data-testid="messe-public-audio-overview">
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-2">Verfügbare Durchsagen</h2>
+            <ul className="bg-white border border-gray-200 rounded-2xl divide-y divide-gray-100">
+              {messe.audio.map(f => (
+                <li key={f.id} className="px-4 py-3 flex items-center gap-3 text-sm text-gray-800"><Volume2 className="w-4 h-4 text-fuchsia-500" /><span className="flex-1 truncate">{f.name}</span>{f.duration_sec && <span className="text-xs text-gray-400">{Math.round(f.duration_sec)} s</span>}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-gray-400 mt-2">Lichtmast wählen, um Lampen zu schalten und eine Durchsage abzuspielen.</p>
+          </div>
+        )}
       </Shell>
     );
   }
