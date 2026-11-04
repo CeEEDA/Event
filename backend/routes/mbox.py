@@ -508,6 +508,9 @@ async def _audit(device: dict, user: dict, endpoint: str, params, result: dict):
 
 def _public(device: dict) -> dict:
     d = {k: v for k, v in device.items() if k not in ("mbox_password", "pi_password", "mqtt_password", "mbox_pi_key_hash")}
+    # Geraetebild (GridFS) ist als ObjectId gespeichert -> nicht JSON-faehig; wie in routes/devices.py als String ausgeben
+    if d.get("image_gridfs_id"):
+        d["image_gridfs_id"] = str(d["image_gridfs_id"])
     d["pi"] = mbox_pi.pi_state(device)
     d["position"] = mbox_pi.device_position(device)
     return d

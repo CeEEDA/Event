@@ -21,12 +21,19 @@ export function MesseDetail({ messeId, onBack }) {
 
   const load = useCallback(async () => {
     try {
-      const [r1, r2] = await Promise.all([api.get(`/messe/${messeId}`), api.get("/mbox/devices")]);
+      const r1 = await api.get(`/messe/${messeId}`);
       setM(r1.data);
       setForm({ name: r1.data.name, location: r1.data.location || "", start_date: r1.data.start_date || "", end_date: r1.data.end_date || "", note: r1.data.note || "" });
-      setAlleMasten(r2.data.devices || []);
     } catch (e) {
       toast.error(getErrorMsg(e, "Messe nicht ladbar"));
+      return;
+    }
+    // M-Box-Liste getrennt laden: schlaegt sie fehl, oeffnet sich die Messe trotzdem (nur Mastenauswahl leer)
+    try {
+      const r2 = await api.get("/mbox/devices");
+      setAlleMasten(r2.data.devices || []);
+    } catch (e) {
+      toast.error(getErrorMsg(e, "M-Box-Liste nicht ladbar"));
     }
   }, [messeId]);
 
