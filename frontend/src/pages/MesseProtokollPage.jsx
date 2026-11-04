@@ -7,16 +7,17 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Logo } from "../components/Logo";
 import QrScanner from "../components/QrScanner";
+import { DictateButton } from "../components/DictateButton";
 
 const EMPTY = { company: "", first_name: "", last_name: "", position: "", phone: "", mobile: "", email: "", website: "",
   street: "", zip: "", city: "", country: "", interest: "", products: "", notes: "", follow_up_date: "", priority: "normal", source: "manuell" };
 
 const PRIO = [["hoch", "Hoch – schnell melden"], ["normal", "Normal"], ["niedrig", "Niedrig"]];
 
-function Feld({ label, k, form, set, type = "text", placeholder, testId }) {
+function Feld({ label, k, form, set, type = "text", placeholder, testId, dictate }) {
   return (
     <div>
-      <label className="text-xs text-gray-500">{label}</label>
+      <div className="flex items-center justify-between"><label className="text-xs text-gray-500">{label}</label>{dictate && <DictateButton value={form[k]} onText={t => set({ ...form, [k]: t })} testId={`lead-dictate-${k}`} />}</div>
       <Input type={type} value={form[k] || ""} onChange={e => set({ ...form, [k]: e.target.value })} placeholder={placeholder} className="h-10" data-testid={testId || `lead-${k}`} />
     </div>
   );
@@ -81,8 +82,8 @@ export default function MesseProtokollPage() {
     try {
       await api.post(`/messe/${messeId}/leads`, form);
       toast.success("Messeprotokoll gespeichert");
-      setForm(EMPTY); setCount(c => c + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setForm(EMPTY);
+      navigate("/hub");
     } catch (e) { toast.error(getErrorMsg(e, "Speichern fehlgeschlagen")); }
     finally { setSaving(false); }
   };
@@ -135,10 +136,10 @@ export default function MesseProtokollPage() {
               <Feld label="Ort" k="city" form={form} set={setForm} />
             </Gruppe>
             <Gruppe icon={MessageSquare} titel="Gespräch">
-              <div className="sm:col-span-2"><Feld label="Interesse / Thema" k="interest" form={form} set={setForm} placeholder="z.B. Stromversorgung Kirmes, M-Box Lichtmast" /></div>
-              <div className="sm:col-span-2"><Feld label="Produkte / Mengen" k="products" form={form} set={setForm} placeholder="z.B. 2× Lichtmast, 1× 100 kVA" /></div>
+              <div className="sm:col-span-2"><Feld label="Interesse / Thema" k="interest" form={form} set={setForm} placeholder="z.B. Stromversorgung Kirmes, M-Box Lichtmast" dictate /></div>
+              <div className="sm:col-span-2"><Feld label="Produkte / Mengen" k="products" form={form} set={setForm} placeholder="z.B. 2× Lichtmast, 1× 100 kVA" dictate /></div>
               <div className="sm:col-span-2">
-                <label className="text-xs text-gray-500">Notizen</label>
+                <div className="flex items-center justify-between"><label className="text-xs text-gray-500">Notizen</label><DictateButton value={form.notes} onText={t => setForm(f => ({ ...f, notes: t }))} testId="lead-dictate-notes" /></div>
                 <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={4} className="w-full rounded-md border border-gray-300 p-2 text-sm" placeholder="Was wurde besprochen, was wünscht der Kunde?" data-testid="lead-notes" />
               </div>
               <Feld label="Wiedervorlage / Anruf am" k="follow_up_date" form={form} set={setForm} type="date" />
@@ -156,7 +157,7 @@ export default function MesseProtokollPage() {
                 {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />} Protokoll speichern
               </Button>
             </div>
-            <p className="text-[11px] text-gray-400 text-center">Keine Pflichtfelder. Alles landet unter Verwaltung → Messe → {messe.name} → Messe Kontaktformular.</p>
+            <p className="text-[11px] text-gray-400 text-center">Keine Pflichtfelder. Nach dem Speichern geht es zurück zum Hub; alles landet unter Verwaltung → Messe → {messe.name} → Messe Kontaktformular.</p>
           </>
         )}
       </main>
