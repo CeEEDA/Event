@@ -79,7 +79,17 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path], prerol
         info["preroll_sec"] = round(preroll_sec, 2)
         if onset < pre:
             onset = pre
+        # Sprachbeginn im Original relativ zum bekannten Rauschpegel: erster 150-ms-Block, der 10 dB ueber dem Vorlauf liegt
+        frame = int(0.05 * sr)
+        noise_rms = float(np.sqrt(np.mean(np.square(lead)))) if len(lead) else 0.0
+        n = len(y) // frame
+        rms = np.sqrt(np.mean(np.square(y[:n * frame].reshape(n, frame)), axis=1)) if n else np.zeros(0)
+        loud = rms > max(noise_rms * 3.16, 0.004)
+        hits = [i for i in range(pre // frame, n - 2) if loud[i] and loud[i + 1] and loud[i + 2]]
+        onset_orig = hits[0] * frame if hits else pre
+        info["speech_start_sec"] = round(onset_orig / sr, 2)
     else:
+        onset_orig = 0
         # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, max. 1 s; sonst erste 0,4 s) als Referenz
         lead = y[:min(onset, sr)] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
     noise_parts = []
@@ -111,8 +121,8 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path], prerol
     onset2, offset2, _ = _speech_bounds(y, sr)
     keep_in, keep_out, fade = int(0.35 * sr), int(0.4 * sr), int(0.06 * sr)
     if preroll_sec and preroll_sec > 0.5:
-        # alles vor dem Countdown-Ende weg (minus 0,2 s Reserve fuer schnelle Sprecher)
-        onset2 = max(onset2, int(max(0.0, preroll_sec - 0.2) * sr) + keep_in)
+        # alles vor dem Countdown-Ende weg (minus 0,2 s Reserve) - und bis zum im Original erkannten Sprachbeginn
+        onset2 = max(onset2, int(max(0.0, preroll_sec - 0.2) * sr) + keep_in, onset_orig)
     start = max(0, onset2 - keep_in)
     end = min(len(y), offset2 + keep_out)
     pre = np.zeros(int(PRE_SEC * sr), dtype=y.dtype)
