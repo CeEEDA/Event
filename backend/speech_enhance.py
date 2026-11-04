@@ -40,12 +40,33 @@ def _load_wav(path: Path):
     return y, sr
 
 
+def _speech_bounds(y, sr: int):
+    """Erster/letzter Sprachanteil (Sample-Index) ueber RMS-Rahmen von 50 ms; Schwelle = Rauschteppich + 12 dB."""
+    import numpy as np
+    frame = int(0.05 * sr)
+    n = len(y) // frame
+    if n < 4:
+        return 0, len(y), 0.0
+    rms = np.sqrt(np.mean(np.square(y[:n * frame].reshape(n, frame)), axis=1)) + 1e-9
+    floor = float(np.percentile(rms, 15))
+    thresh = max(floor * 4.0, 0.004)
+    above = rms > thresh
+    hits = [i for i in range(n - 2) if above[i] and above[i + 1] and above[i + 2]]
+    if not hits:
+        return 0, len(y), floor
+    return hits[0] * frame, min(len(y), (hits[-1] + 3) * frame), floor
+
+
 def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dict:
     import numpy as np
     import noisereduce as nr
     import soundfile as sf
     y, sr = _load_wav(src_wav)
     info = {"profile": None, "passes": 0}
+    onset, offset, _floor = _speech_bounds(y, sr)
+    # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, sonst erste 0,4 s) als Referenz
+    lead = y[:onset] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
+    noise_parts = []
     if profile and profile.exists():
         prof_wav = dst_wav.with_suffix(".profile.wav")
         _ff(["-i", str(profile), "-ac", "1", "-ar", str(sr), "-c:a", "pcm_s16le", str(prof_wav)])
@@ -54,16 +75,36 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
         # Referenz-Atmo leiser/lauter als in der Aufnahme -> auf Aufnahme-Rauschteppich skalieren
         y_rms = float(np.sqrt(np.mean(np.square(y)))) or 1e-6
         n_rms = float(np.sqrt(np.mean(np.square(noise)))) or 1e-6
-        noise = noise * min(1.0, (y_rms * 0.35) / n_rms)
-        # sanft: weiche Masken (lange Zeitglaettung), nicht alles wegnehmen -> keine abgehackten Wortanfaenge/-enden
-        y = nr.reduce_noise(y=y, sr=sr, y_noise=noise, stationary=True, prop_decrease=0.75, n_fft=2048,
-                            freq_mask_smooth_hz=600, time_mask_smooth_ms=200, n_std_thresh_stationary=1.2)
+        noise_parts.append(noise * min(1.0, (y_rms * 0.35) / n_rms))
         info["profile"] = profile.name
+    if len(lead) > int(0.2 * sr):
+        noise_parts.append(np.tile(lead, max(1, int(3 * sr / len(lead)))))
+        info["lead_noise_sec"] = round(len(lead) / sr, 2)
+    if noise_parts:
+        # sanft: weiche Masken (lange Zeitglaettung), nicht alles wegnehmen -> keine abgehackten Wortanfaenge/-enden
+        y = nr.reduce_noise(y=y, sr=sr, y_noise=np.concatenate(noise_parts), stationary=True, prop_decrease=0.75, n_fft=2048,
+                            freq_mask_smooth_hz=600, time_mask_smooth_ms=200, n_std_thresh_stationary=1.2)
         info["passes"] += 1
-    # Rest-Rauschen / Hall adaptiv
-    y = nr.reduce_noise(y=y, sr=sr, stationary=False, prop_decrease=0.45, n_fft=2048, time_constant_s=2.0,
-                        freq_mask_smooth_hz=800, time_mask_smooth_ms=250, thresh_n_mult_nonstationary=2.5)
+    # Rest-Rauschen / Hall adaptiv - mit 2 s "Aufwaermen" (eigener Vorlauf vorangestellt), damit der Anfang nicht ungefiltert bleibt
+    warm = np.tile(lead, max(1, int(2 * sr / max(1, len(lead)))))[: 2 * sr] if len(lead) > int(0.1 * sr) else np.zeros(0, dtype=y.dtype)
+    yy = nr.reduce_noise(y=np.concatenate([warm, y]), sr=sr, stationary=False, prop_decrease=0.45, n_fft=2048, time_constant_s=2.0,
+                         freq_mask_smooth_hz=800, time_mask_smooth_ms=250, thresh_n_mult_nonstationary=2.5)
+    y = yy[len(warm):]
     info["passes"] += 1
+    # Vor dem ersten und nach dem letzten Wort: weich ausblenden (0,25 s Vorlauf bleibt), damit vor dem Sprechen Ruhe ist
+    onset2, offset2, _ = _speech_bounds(y, sr)
+    keep = int(0.25 * sr)
+    fade = int(0.12 * sr)
+    if onset2 > keep + fade:
+        cut = onset2 - keep
+        y[:cut - fade] *= 0.0
+        y[cut - fade:cut] *= np.linspace(0.0, 1.0, fade, dtype=y.dtype)
+        info["lead_trim_sec"] = round(cut / sr, 2)
+    if offset2 + keep + fade < len(y):
+        cut = offset2 + keep
+        y[cut:cut + fade] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
+        y[cut + fade:] *= 0.0
+        info["tail_trim_sec"] = round((len(y) - cut) / sr, 2)
     y = np.clip(y, -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
     return info
