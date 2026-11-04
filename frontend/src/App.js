@@ -31,6 +31,8 @@ import MessePublicPage from "./pages/MessePublicPage";
 import MesseDurchsagePage from "./pages/MesseDurchsagePage";
 import MesseBeleuchtungPage from "./pages/MesseBeleuchtungPage";
 import MesseKontaktPage from "./pages/MesseKontaktPage";
+import MesseProtokollPage from "./pages/MesseProtokollPage";
+import MesseKontaktePage from "./pages/MesseKontaktePage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -268,6 +270,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MessePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/messe/:messeId/kontakte"
+        element={
+          <ProtectedRoute>
+            <MesseKontaktePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/messe-protokoll/:messeId"
+        element={
+          <ProtectedRoute>
+            <MesseProtokollPage />
           </ProtectedRoute>
         }
       />

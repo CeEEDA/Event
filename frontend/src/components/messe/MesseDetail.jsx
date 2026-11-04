@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Radio, Trash2, RefreshCw, Power } from "lucide-react";
+import { ArrowLeft, Check, Radio, Trash2, RefreshCw, Power, ClipboardList } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import api, { getErrorMsg } from "../../lib/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -12,6 +13,7 @@ import { MesseQr } from "./MesseQr";
 import { MesseTeam } from "./MesseTeam";
 
 export function MesseDetail({ messeId, onBack }) {
+  const navigate = useNavigate();
   const [m, setM] = useState(null);
   const [alleMasten, setAlleMasten] = useState([]);
   const [form, setForm] = useState(null);
@@ -79,6 +81,9 @@ export function MesseDetail({ messeId, onBack }) {
           </Button>
           <div className="h-5 w-px bg-gray-200" />
           <h1 className="text-base font-semibold text-gray-900 truncate flex-1">{m.name}</h1>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/verwaltung/messe/${messeId}/kontakte`)} className="hidden sm:inline-flex" data-testid="messe-kontakte-btn">
+            <ClipboardList className="w-4 h-4 mr-1" /> Messe Kontaktformular
+          </Button>
           <label className="flex items-center gap-2 text-xs text-gray-600" title="Deaktiviert = QR-Codes zeigen 'nicht freigeschaltet'">
             <Power className={`w-4 h-4 ${m.active ? "text-emerald-500" : "text-gray-400"}`} />
             <span className="hidden sm:inline">{m.active ? "freigeschaltet" : "gesperrt"}</span>

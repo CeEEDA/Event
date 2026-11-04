@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Presentation, Share2, ExternalLink } from "lucide-react";
+import { Presentation, Share2, ExternalLink, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import api from "../../lib/api";
 
@@ -39,6 +39,7 @@ export function HubMesseKontakt() {
               <div className="flex flex-wrap gap-2 mt-3 justify-center sm:justify-start">
                 <button type="button" onClick={() => share(m, url)} className="h-9 px-3 rounded-lg bg-fuchsia-600 text-white text-sm font-semibold flex items-center gap-1.5" data-testid={`hub-messe-share-${m.id}`}><Share2 className="w-4 h-4" /> Kontakt teilen</button>
                 <a href={url} target="_blank" rel="noreferrer" className="h-9 px-3 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 flex items-center gap-1.5" data-testid={`hub-messe-open-${m.id}`}><ExternalLink className="w-4 h-4" /> Vorschau</a>
+                <a href={`/messe-protokoll/${m.id}`} className="h-9 px-3 rounded-lg bg-gray-900 text-white text-sm font-semibold flex items-center gap-1.5" data-testid={`hub-messe-protokoll-${m.id}`}><ClipboardList className="w-4 h-4" /> Messeprotokoll anlegen</a>
               </div>
             </div>
           </div>

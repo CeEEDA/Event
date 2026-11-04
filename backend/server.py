@@ -2114,6 +2114,9 @@ app.include_router(mbox_audio_router)
 from routes.messe import router as messe_router, init_messe_routes
 init_messe_routes(db)
 app.include_router(messe_router)
+from routes.messe_leads import router as messe_leads_router, init_messe_leads_routes
+init_messe_leads_routes(db)
+app.include_router(messe_leads_router)
 
 from routes.tank_pi import router as tank_router, init_tank_routes
 init_tank_routes(db, decode_jwt_token)
