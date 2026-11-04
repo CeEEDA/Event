@@ -2228,8 +2228,7 @@ from routes.travel_expenses import router as travel_expenses_router, init_travel
 init_travel_expense_routes(db, decode_jwt_token)
 app.include_router(travel_expenses_router)
 
-from routes.incoming_invoices import router as incoming_invoices_router
-app.include_router(incoming_invoices_router)
+# Eingangsrechnungen-Modul entfernt (2026-06, ungenutzt) - routes/incoming_invoices.py nicht mehr eingebunden
 
 from routes.fints_vr import router as fints_vr_router
 app.include_router(fints_vr_router)
@@ -2375,6 +2374,17 @@ async def startup_event():
         asyncio.create_task(_ffmpeg_setup.ensure_on_startup())
     except Exception as _e:
         logger.warning(f"ffmpeg-Pruefung konnte nicht starten: {_e}")
+
+    # Eingangsrechnungen-Modul entfernt: zugehoerige Aufgaben im Hub als erledigt markieren (Soft-Delete, kein Loeschen)
+    try:
+        _r = await db.tasks.update_many(
+            {"task_type": {"$in": ["fints_incoming_amount_mismatch", "fints_incoming_ambiguous"]}, "completed": {"$ne": True}},
+            {"$set": {"completed": True, "completed_at": datetime.now(timezone.utc).isoformat(), "completed_by": "system",
+                      "completed_by_name": "System (Eingangsrechnungen-Modul entfernt)"}})
+        if _r.modified_count:
+            logger.info(f"Eingangsrechnungen: {_r.modified_count} alte Aufgaben als erledigt markiert")
+    except Exception as _e:
+        logger.warning(f"Eingangsrechnungen-Aufgaben konnten nicht bereinigt werden: {_e}")
 
     # Health-Diag Log-Loop (alle 15 Min RSS/FDs/Tasks/Mongo-Ping)
     try:

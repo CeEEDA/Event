@@ -2161,7 +2161,7 @@ function FinTSVRBankingSection() {
         })()}
 
         <div className="text-sm text-gray-600">
-          <p>Zweite Bank für Kontoabgleich mit offenen Eingangsrechnungen.</p>
+          <p>Zweite Bank (Kontoabruf). Der frühere Eingangsrechnungen-Abgleich wurde entfernt – „Abgleich" ist nur noch ein Verbindungstest.</p>
           {status?.iban && <p className="text-xs text-gray-400 mt-1">IBAN: {status.iban} · BLZ: {status.blz}</p>}
           {status?.last_check && (
             <p className="text-xs text-emerald-600 mt-1">Letzter Abgleich: {new Date(status.last_check).toLocaleString("de-DE")}</p>

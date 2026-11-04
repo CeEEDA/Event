@@ -329,9 +329,19 @@ async def get_transactions(days: int = 14, token: str = Query(...)):
 
 @router.post("/check-payments")
 async def check_payments(token: str = Query(...)):
-    """Führt einen Eingangsrechnungen-Abgleich NUR mit den VR-Bank-Transaktionen aus.
-    Nutzt die bestehende Matching-Logik (analog Sparkasse) - Sammelüberweisungen
-    ausgeschlossen. Gleicht ausgehende Buchungen gegen offene Eingangsrechnungen ab."""
+    """Eingangsrechnungen-Modul wurde entfernt (2026-06): Abgleich erzeugt keine Aufgaben mehr, nur noch ein Verbindungstest."""
+    await _require_admin(token)
+    bank = _get_vr_bank_config()
+    if not bank:
+        raise HTTPException(status_code=400, detail="VR-Bank nicht konfiguriert")
+    result = await _fetch_from_bank(db, bank, days_back=14)
+    return {"checked": len(result.get("transactions", [])), "matched": 0, "auto_marked": 0, "admin_tasks": 0, "ambiguous": 0,
+            "ok": result.get("ok", False), "error": result.get("error"),
+            "hinweis": "Eingangsrechnungen-Modul entfernt - nur Verbindungstest, keine Zuordnungen/Aufgaben"}
+
+
+async def _check_payments_legacy(token: str):
+    """Alter Eingangsrechnungen-Abgleich (nicht mehr erreichbar)."""
     await _require_admin(token)
     bank = _get_vr_bank_config()
     if not bank:
