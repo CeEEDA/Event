@@ -27,7 +27,7 @@ db = None
 PUBLIC_RATE_PER_MIN = 40
 PUBLIC_USER = {"id": "messe-besucher", "name": "Messe-Besucher", "role": "public"}
 STAFF_ROLES = ["admin", "mitarbeiter"]
-COMPANY = {"name": "Eventenergie Deutschland GmbH & Co. KG", "web": "https://eventenergie.app"}
+COMPANY = {"name": "Eventenergie Deutschland GmbH & Co. KG", "web": "https://www.eventenergie-deutschland.de"}
 LAMP_VARS = ["DB_HMI.Status.Lampe", "DB_Parameter.Lampen_Auswahl", "DB_HMI.Status.Licht_Ein", "DB_HMI.Status.Versorgung",
              "DB_HMI.Status.Lampen_Alle_An", "DB_HMI.Status.Lampen_Alle_Aus", "DB_HMI.Status.Gen_Zustand"]
 _rate: dict = defaultdict(deque)
@@ -215,7 +215,7 @@ async def _contact_by_token(token: str) -> tuple:
     if not m:
         raise HTTPException(status_code=404, detail="Kontaktkarte nicht gefunden")
     uid = next(k for k, v in m["staff_tokens"].items() if v == token)
-    u = await db.users.find_one({"id": uid, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1})
+    u = await db.users.find_one({"id": uid, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "mobile": 1})
     if not u:
         raise HTTPException(status_code=404, detail="Kontaktkarte nicht gefunden")
     p = await db.employee_profiles.find_one({"user_id": uid}, {"_id": 0}) or {}
@@ -223,7 +223,7 @@ async def _contact_by_token(token: str) -> tuple:
 
 
 def _contact_payload(m: dict, u: dict, p: dict) -> dict:
-    return {"name": u.get("name"), "email": u.get("email"), "phone": p.get("phone") or "", "position": p.get("position") or "",
+    return {"name": u.get("name"), "email": u.get("email"), "phone": p.get("phone") or "", "mobile": u.get("mobile") or "", "position": p.get("position") or "",
             "company": COMPANY["name"], "web": COMPANY["web"], "avatar": bool(p.get("avatar_path")), "user_id": u["id"],
             "messe": {"name": m["name"], "location": m.get("location"), "start_date": m.get("start_date"), "end_date": m.get("end_date")}}
 
@@ -243,8 +243,10 @@ async def public_contact_vcard(token: str):
     lines = ["BEGIN:VCARD", "VERSION:3.0", f"N:{last};{first};;;", f"FN:{c['name']}", f"ORG:{c['company']}"]
     if c["position"]:
         lines.append(f"TITLE:{c['position']}")
-    if c["phone"]:
-        lines.append(f"TEL;TYPE=CELL,VOICE:{c['phone']}")
+    if c["mobile"]:
+        lines.append(f"TEL;TYPE=CELL,VOICE:{c['mobile']}")
+    if c["phone"] and c["phone"] != c["mobile"]:
+        lines.append(f"TEL;TYPE=WORK,VOICE:{c['phone']}")
     if c["email"]:
         lines.append(f"EMAIL;TYPE=INTERNET,WORK:{c['email']}")
     lines += [f"URL:{c['web']}", f"NOTE:Kennengelernt auf {m['name']}", "END:VCARD"]

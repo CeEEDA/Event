@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
-import { Phone, Mail, Globe, Download, Building2, Presentation } from "lucide-react";
+import { Phone, Mail, Globe, Download, Building2, Presentation, Smartphone } from "lucide-react";
 import { BACKEND_URL } from "../lib/api";
 import { Logo } from "../components/Logo";
 import { Hinweis } from "../components/messe/MessePublicShell";
@@ -44,9 +44,14 @@ export default function MesseKontaktPage() {
               <p className="text-[11px] text-gray-400 mt-2">Legt die Visitenkarte in deinen Kontakten ab (vCard).</p>
             </div>
             <div className="mt-4 bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100">
-              {c.phone && (
+              {c.mobile && (
+                <a href={`tel:${c.mobile.replace(/\s+/g, "")}`} className="flex items-center gap-3 px-4 py-4" data-testid="messe-kontakt-mobile">
+                  <Smartphone className="w-5 h-5 text-fuchsia-500" /><span className="flex-1 font-medium">{c.mobile}</span><span className="text-xs text-gray-400">Mobil</span>
+                </a>
+              )}
+              {c.phone && c.phone !== c.mobile && (
                 <a href={`tel:${c.phone.replace(/\s+/g, "")}`} className="flex items-center gap-3 px-4 py-4" data-testid="messe-kontakt-phone">
-                  <Phone className="w-5 h-5 text-fuchsia-500" /><span className="flex-1 font-medium">{c.phone}</span><span className="text-xs text-gray-400">Anrufen</span>
+                  <Phone className="w-5 h-5 text-fuchsia-500" /><span className="flex-1 font-medium">{c.phone}</span><span className="text-xs text-gray-400">Telefon</span>
                 </a>
               )}
               {c.email && (

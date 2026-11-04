@@ -429,6 +429,7 @@ export default function AdminPage() {
     setFormData({
       name: user.name,
       email: user.email,
+      mobile: user.mobile || "",
       password: "",
       role: user.role,
       is_active: user.is_active,
@@ -483,6 +484,7 @@ export default function AdminPage() {
       if (editingUser) {
         await api.put(`/users/${editingUser.id}`, {
           name: formData.name,
+          mobile: formData.mobile || "",
           role: formData.role,
           is_active: formData.is_active,
           access_type: formData.access_type,
@@ -508,7 +510,8 @@ export default function AdminPage() {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          role: formData.role
+          role: formData.role,
+          mobile: formData.mobile || ""
         });
         toast.success("Benutzer erstellt");
       }

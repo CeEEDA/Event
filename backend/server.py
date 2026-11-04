@@ -109,6 +109,7 @@ class UserCreate(BaseModel):
     password: str
     name: str
     role: str = UserRole.KUNDE
+    mobile: Optional[str] = None
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -120,6 +121,7 @@ class UserUpdate(BaseModel):
     access_end: Optional[str] = None
     permissions: Optional[Dict] = None
     customer_no: Optional[str] = None
+    mobile: Optional[str] = None
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
@@ -143,6 +145,7 @@ class UserResponseWithPassword(BaseModel):
     created_at: str
     apps: Dict = {}
     password_plain: Optional[str] = None  # Only for admin view
+    mobile: Optional[str] = None
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -158,6 +161,7 @@ class UserResponse(BaseModel):
     access_end: Optional[str] = None
     permissions: Dict = {}
     customer_no: Optional[str] = None
+    mobile: Optional[str] = None
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -448,6 +452,7 @@ async def login(data: LoginRequest, request: Request):
         access_end=user.get("access_end"),
         permissions=user.get("permissions", {}),
         customer_no=user.get("customer_no"),
+            mobile=user.get("mobile"),
     )
     
     return LoginResponse(token=token, user=user_response)
@@ -480,6 +485,7 @@ async def get_me(user: dict = Depends(get_current_user)):
         access_end=user.get("access_end"),
         permissions=user.get("permissions", {}),
         customer_no=user.get("customer_no"),
+            mobile=user.get("mobile"),
     )
 
 # ============== Password Reset ==============
@@ -602,6 +608,7 @@ async def list_users(admin: dict = Depends(require_admin)):
         access_end=u.get("access_end"),
         permissions=u.get("permissions", {}),
         customer_no=u.get("customer_no"),
+            mobile=u.get("mobile"),
     ) for u in users]
 
 @api_router.post("/users", response_model=UserResponse)
@@ -621,6 +628,7 @@ async def create_user(data: UserCreate, admin: dict = Depends(require_admin)):
         "role": data.role,
         "is_active": True,
         "apps": apps,
+        "mobile": (data.mobile or "").strip() or None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -661,6 +669,8 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         update_data["permissions"] = data.permissions
     if data.customer_no is not None:
         update_data["customer_no"] = data.customer_no.strip()
+    if data.mobile is not None:
+        update_data["mobile"] = data.mobile.strip() or None
     
     if update_data:
         await db.users.update_one({"id": user_id}, {"$set": update_data})
@@ -680,6 +690,7 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         access_end=updated_user.get("access_end"),
         permissions=updated_user.get("permissions", {}),
         customer_no=updated_user.get("customer_no"),
+        mobile=updated_user.get("mobile"),
     )
 
 @api_router.delete("/users/{user_id}")

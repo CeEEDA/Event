@@ -86,6 +86,21 @@ export default function UserEditModal({
             />
           </div>
 
+          {formData.role !== "kunde" && (
+            <div className="space-y-2">
+              <Label className="text-gray-700">Mobilnummer</Label>
+              <Input
+                type="tel"
+                value={formData.mobile || ""}
+                onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
+                placeholder="+49 170 1234567"
+                className="border-gray-300"
+                data-testid="user-mobile-input"
+              />
+              <p className="text-xs text-gray-500">Wird auf der Messe-Kontaktkarte (QR im Hub) als Mobilnummer übermittelt.</p>
+            </div>
+          )}
+
           {!editingUser && (
             <>
               <div className="space-y-2">
