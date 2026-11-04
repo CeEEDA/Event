@@ -55,11 +55,14 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
         y_rms = float(np.sqrt(np.mean(np.square(y)))) or 1e-6
         n_rms = float(np.sqrt(np.mean(np.square(noise)))) or 1e-6
         noise = noise * min(1.0, (y_rms * 0.35) / n_rms)
-        y = nr.reduce_noise(y=y, sr=sr, y_noise=noise, stationary=True, prop_decrease=0.9, n_fft=2048, freq_mask_smooth_hz=400, time_mask_smooth_ms=60)
+        # sanft: weiche Masken (lange Zeitglaettung), nicht alles wegnehmen -> keine abgehackten Wortanfaenge/-enden
+        y = nr.reduce_noise(y=y, sr=sr, y_noise=noise, stationary=True, prop_decrease=0.75, n_fft=2048,
+                            freq_mask_smooth_hz=600, time_mask_smooth_ms=200, n_std_thresh_stationary=1.2)
         info["profile"] = profile.name
         info["passes"] += 1
     # Rest-Rauschen / Hall adaptiv
-    y = nr.reduce_noise(y=y, sr=sr, stationary=False, prop_decrease=0.7, n_fft=2048, time_constant_s=1.5, freq_mask_smooth_hz=500, time_mask_smooth_ms=50)
+    y = nr.reduce_noise(y=y, sr=sr, stationary=False, prop_decrease=0.45, n_fft=2048, time_constant_s=2.0,
+                        freq_mask_smooth_hz=800, time_mask_smooth_ms=250, thresh_n_mult_nonstationary=2.5)
     info["passes"] += 1
     y = np.clip(y, -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
@@ -80,8 +83,8 @@ def enhance_speech(src: Path, dst: Path, profile: Optional[Path] = DEFAULT_PROFI
             logger.warning(f"Spektrales Gating uebersprungen: {e}")
             gate = {"profile": None, "passes": 0, "error": str(e)[:120]}
             stage = work
-        filters = ["afftdn=nr=10:nf=-40:tn=1", "agate=threshold=0.02:ratio=2:attack=5:release=150",
-                   "acompressor=threshold=-20dB:ratio=3:attack=8:release=180:makeup=2dB"]
+        # kein Noise-Gate mehr (schnitt leise Silbenanfaenge/-enden ab); leichtes afftdn, Kompressor mit langsamem Release
+        filters = ["afftdn=nr=6:nf=-48:tn=1", "acompressor=threshold=-22dB:ratio=2.5:attack=15:release=400:makeup=2dB:knee=6"]
         tmp = dst.with_suffix(".stage3.wav")
         _ff(["-i", str(stage), "-af", ",".join(filters), "-c:a", "pcm_s16le", str(tmp)])
         gain = -_peak_db(tmp)
