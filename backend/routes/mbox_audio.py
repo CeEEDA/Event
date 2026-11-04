@@ -28,7 +28,7 @@ decode_jwt_token = None
 # Fertige Durchsagen liegen in MongoDB (GridFS, Bucket "mbox_audio"); ffmpeg arbeitet nur mit temporaeren Dateien.
 fs = None
 MAX_UPLOAD = 25 * 1024 * 1024
-ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}
+ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac", ".webm", ".weba", ".mp4", ".opus"}  # webm/mp4: Browser-Aufnahme (MediaRecorder)
 GROUP_START_LEAD_SEC = 6  # Pi pollt alle 3 s -> alle Masten haben den Befehl vor dem Startzeitpunkt
 NOISE_FLOOR_LIMIT_DB = -50.0
 
@@ -99,8 +99,15 @@ def _analyze(path: Path) -> dict:
     }
 
 
-def process_audio(src: Path, dst: Path) -> dict:
-    """Pass 1: Rauschen pruefen und ggf. entfernen (afftdn). Pass 2: Spitzenpegel auf 0 dBFS, MP3 192k."""
+def process_audio(src: Path, dst: Path, enhance: bool = False) -> dict:
+    """enhance=True (Mikrofon-Aufnahme / Notdurchsage): Sprach-Optimierung mit Nebengeraeusch-Entfernung, 0 dBFS (speech_enhance).
+    Sonst Pass 1: Rauschen pruefen und ggf. entfernen (afftdn). Pass 2: Spitzenpegel auf 0 dBFS, MP3 192k."""
+    if enhance:
+        import speech_enhance
+        res = speech_enhance.enhance_speech(src, dst)
+        res["after"] = {**_analyze(dst), **res["after"]}
+        res["before"] = {**_analyze(src), **res["before"]}
+        return res
     before = _analyze(src)
     noisy = before["noise_floor_db"] is not None and before["noise_floor_db"] > NOISE_FLOOR_LIMIT_DB
     stage = src
@@ -125,7 +132,7 @@ def process_audio(src: Path, dst: Path) -> dict:
             "filters": (["afftdn=nf=-25"] if noisy else []) + filters}
 
 
-async def _process_job(fid: str, src: Path, stored: str):
+async def _process_job(fid: str, src: Path, stored: str, enhance: bool = False):
     dst = src.with_suffix(".out.mp3")
     try:
         if not ffmpeg_available():
@@ -135,7 +142,7 @@ async def _process_job(fid: str, src: Path, stored: str):
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready_unprocessed", "sha256": sha, "size": size,
                                                                         "warning": "ffmpeg fehlt auf dem Server - Datei unveraendert uebernommen"}})
         else:
-            analysis = await asyncio.to_thread(process_audio, src, dst)
+            analysis = await asyncio.to_thread(process_audio, src, dst, enhance)
             sha, size = _sha_size(dst)
             await store_bytes(stored, dst.read_bytes())
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size, "analysis": analysis,
@@ -275,8 +282,11 @@ async def list_order_audio(order_pk: int, user: dict = Depends(get_user)):
             "kunde": user.get("role") == "kunde", "active": phase == "active", "phase": phase, "server_time": datetime.now(timezone.utc).isoformat()}
 
 @router.post("/orders/{order_pk}/audio")
-async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: str = Form(""), user: dict = Depends(get_user)):
+async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
+                             user: dict = Depends(get_user)):
+    """source='record' + enhance='1': Mikrofon-Aufnahme (z.B. Notdurchsage) mit Sprach-Optimierung - UI fuer Auftraege folgt."""
     await _order_access(user, order_pk)
+    do_enhance = str(enhance).lower() in ("1", "true", "on", "yes")
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext or '?'} nicht erlaubt (MP3, WAV, M4A, OGG, AAC, FLAC)")
@@ -297,9 +307,10 @@ async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: 
     stored = f"order{order_pk}_{fid[:8]}.mp3"
     doc = {"id": fid, "order_pk": str(order_pk), "name": label, "original_name": file.filename, "stored": stored,
            "status": "processing", "size": size, "sha256": None, "uploaded_by": user.get("name"), "uploaded_by_id": user["id"],
-           "uploaded_by_role": user.get("role"), "uploaded_at": datetime.now(timezone.utc).isoformat()}
+           "uploaded_by_role": user.get("role"), "uploaded_at": datetime.now(timezone.utc).isoformat(),
+           "source": "record" if source == "record" else "upload", "enhanced": do_enhance}
     await db.mbox_order_audio.insert_one(doc)
-    asyncio.create_task(_process_job(fid, src, stored))
+    asyncio.create_task(_process_job(fid, src, stored, do_enhance))
     return _public_file(doc)
 
 @router.patch("/orders/{order_pk}/audio/{fid}")

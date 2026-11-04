@@ -226,7 +226,7 @@ async def delete_messe(messe_id: str, user: dict = Depends(get_user)):
 
 # ---- Testdurchsagen ----
 
-async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str):
+async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str, enhance: bool = False):
     dst = src.with_suffix(".out.mp3")
     try:
         if not mbox_audio.ffmpeg_available():
@@ -236,10 +236,10 @@ async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str):
             await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "ready_unprocessed", "sha256": sha, "size": size,
                                                                    "warning": "ffmpeg fehlt auf dem Server - Datei unveraendert uebernommen"}})
         else:
-            analysis = await asyncio.to_thread(mbox_audio.process_audio, src, dst)
+            analysis = await asyncio.to_thread(mbox_audio.process_audio, src, dst, enhance)
             sha, size = mbox_audio._sha_size(dst)
             await mbox_audio.store_bytes(stored, dst.read_bytes())
-            await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size,
+            await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size, "analysis": analysis,
                                                                    "duration_sec": analysis["after"].get("duration_sec")}})
     except Exception as e:
         await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "failed", "error": str(e)[:300]}})
@@ -253,9 +253,12 @@ async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str):
 
 
 @router.post("/{messe_id}/audio")
-async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: str = Form(""), user: dict = Depends(get_user)):
+async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
+                             user: dict = Depends(get_user)):
+    """source='record': Mikrofon-Aufnahme aus dem Browser (webm/mp4). enhance='1': Sprach-Optimierung (Nebengeraeusche, 0 dB)."""
     _staff(user)
     await _messe(messe_id)
+    do_enhance = str(enhance).lower() in ("1", "true", "on", "yes")
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in mbox_audio.ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext or '?'} nicht erlaubt (MP3, WAV, M4A, OGG, AAC, FLAC)")
@@ -270,12 +273,13 @@ async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: 
     tmp = tempfile.NamedTemporaryFile(suffix=ext, prefix="messe_ffmpeg_", delete=False)
     with tmp:
         tmp.write(bytes(data))
-    label = (name or os.path.splitext(file.filename or "Testdurchsage")[0]).strip()[:80] or "Testdurchsage"
+    label = (name or os.path.splitext(file.filename or "Testdurchsage")[0]).strip()[:80] or ("Aufnahme" if source == "record" else "Testdurchsage")
     stored = f"messe{messe_id[:8]}_{fid[:8]}.mp3"
     doc = {"id": fid, "messe_id": messe_id, "name": label, "original_name": file.filename, "stored": stored, "status": "processing",
-           "size": size, "sha256": None, "uploaded_by": user.get("name"), "uploaded_at": _now()}
+           "size": size, "sha256": None, "uploaded_by": user.get("name"), "uploaded_at": _now(),
+           "source": "record" if source == "record" else "upload", "enhanced": do_enhance}
     await db.messe_audio.insert_one(dict(doc))
-    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id))
+    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id, do_enhance))
     return doc
 
 

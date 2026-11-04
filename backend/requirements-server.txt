@@ -125,3 +125,6 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
+noisereduce==3.0.3
+scipy==1.17.1
+soundfile==0.14.0
