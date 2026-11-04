@@ -43,6 +43,7 @@ export function MesseAudio({ messeId, audio = [], onChange }) {
     fd.append("enhance", (opts.enhance ?? enhance) ? "1" : "");
     fd.append("temporary", opts.temporary ? "1" : "");
     fd.append("keep_minutes", String(opts.keep || 15));
+    fd.append("preroll_sec", String(opts.prerollSec || 0));
     await api.post(`/messe/${messeId}/audio`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 });
   };
 
@@ -62,10 +63,10 @@ export function MesseAudio({ messeId, audio = [], onChange }) {
     }
   };
 
-  const saveRecording = async (f, { name }) => {
+  const saveRecording = async (f, { name, prerollSec }) => {
     setBusy(true);
     try {
-      await send(f, name, { source: "record", enhance: true, temporary: gast, keep });
+      await send(f, name, { source: "record", enhance: true, temporary: gast, keep, prerollSec });
       toast.success(gast ? `Aufnahme gespeichert – wird optimiert und nach ${keep} Min. automatisch entfernt` : "Aufnahme gespeichert – wird optimiert");
       setModus("upload");
       onChange();

@@ -228,7 +228,7 @@ async def delete_messe(messe_id: str, user: dict = Depends(get_user)):
 
 # ---- Testdurchsagen ----
 
-async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str, enhance: bool = False):
+async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str, enhance: bool = False, preroll_sec: float = 0.0):
     dst = src.with_suffix(".out.mp3")
     try:
         if not mbox_audio.ffmpeg_available():
@@ -238,7 +238,7 @@ async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str, 
             await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "ready_unprocessed", "sha256": sha, "size": size,
                                                                    "warning": "ffmpeg fehlt auf dem Server - Datei unveraendert uebernommen"}})
         else:
-            analysis = await asyncio.to_thread(mbox_audio.process_audio, src, dst, enhance)
+            analysis = await asyncio.to_thread(mbox_audio.process_audio, src, dst, enhance, preroll_sec)
             sha, size = mbox_audio._sha_size(dst)
             await mbox_audio.store_bytes(stored, dst.read_bytes())
             await db.messe_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size, "analysis": analysis,
@@ -258,7 +258,8 @@ GUEST_KEEP_MINUTES = 15
 
 
 async def _store_upload(messe_id: str, file: UploadFile, name: str, enhance: bool, source: str, uploaded_by: str,
-                        temporary: bool = False, keep_minutes: int = GUEST_KEEP_MINUTES, session_id: Optional[str] = None) -> dict:
+                        temporary: bool = False, keep_minutes: int = GUEST_KEEP_MINUTES, session_id: Optional[str] = None,
+                        preroll_sec: float = 0.0) -> dict:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in mbox_audio.ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext or '?'} nicht erlaubt (MP3, WAV, M4A, OGG, AAC, FLAC)")
@@ -278,10 +279,10 @@ async def _store_upload(messe_id: str, file: UploadFile, name: str, enhance: boo
     doc = {"id": fid, "messe_id": messe_id, "name": label, "original_name": file.filename, "stored": stored, "status": "processing",
            "size": size, "sha256": None, "uploaded_by": uploaded_by, "uploaded_at": _now(),
            "source": "record" if source == "record" else "upload", "enhanced": enhance,
-           "temporary": temporary, "session_id": session_id,
+           "temporary": temporary, "session_id": session_id, "preroll_sec": preroll_sec or 0,
            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=max(1, min(keep_minutes, 240)))).isoformat() if temporary else None}
     await db.messe_audio.insert_one(dict(doc))
-    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id, enhance))
+    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id, enhance, preroll_sec))
     return doc
 
 
@@ -309,12 +310,14 @@ async def cleanup_loop():
 
 @router.post("/{messe_id}/audio")
 async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
-                             temporary: str = Form(""), keep_minutes: int = Form(GUEST_KEEP_MINUTES), user: dict = Depends(get_user)):
+                             temporary: str = Form(""), keep_minutes: int = Form(GUEST_KEEP_MINUTES), preroll_sec: float = Form(0.0),
+                             user: dict = Depends(get_user)):
     """source='record': Mikrofon-Aufnahme (webm/mp4). enhance='1': Sprach-Optimierung. temporary='1': Gast-Aufnahme, wird nach keep_minutes geloescht."""
     _staff(user)
     await _messe(messe_id)
     flag = lambda v: str(v).lower() in ("1", "true", "on", "yes")
-    return await _store_upload(messe_id, file, name, flag(enhance), source, user.get("name"), temporary=flag(temporary), keep_minutes=keep_minutes)
+    return await _store_upload(messe_id, file, name, flag(enhance), source, user.get("name"), temporary=flag(temporary), keep_minutes=keep_minutes,
+                               preroll_sec=preroll_sec)
 
 
 @router.patch("/{messe_id}/audio/{fid}")
@@ -390,14 +393,14 @@ async def public_messe(token: str, request: Request):
 
 
 @router.post("/public/{token}/record")
-async def public_record(token: str, request: Request, file: UploadFile = File(...), name: str = Form("")):
+async def public_record(token: str, request: Request, file: UploadFile = File(...), name: str = Form(""), preroll_sec: float = Form(0.0)):
     """Gast spricht eine eigene Durchsage ein: nur fuer seine Sitzung sichtbar, Sprach-Optimierung, wird nach GUEST_KEEP_MINUTES geloescht."""
     m = await _messe_by_token(token)
     await _require_session(request, m)
     _rate_public(request, f"record:{m['id']}")
     sid = request.headers.get("x-messe-session")
     doc = await _store_upload(m["id"], file, name or "Gast-Durchsage", True, "record", f"Messe-Besucher ({m['name']})",
-                              temporary=True, keep_minutes=GUEST_KEEP_MINUTES, session_id=sid)
+                              temporary=True, keep_minutes=GUEST_KEEP_MINUTES, session_id=sid, preroll_sec=preroll_sec)
     return {"id": doc["id"], "name": doc["name"], "status": doc["status"], "temporary": True, "own": True, "expires_at": doc["expires_at"]}
 
 

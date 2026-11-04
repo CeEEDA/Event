@@ -99,12 +99,12 @@ def _analyze(path: Path) -> dict:
     }
 
 
-def process_audio(src: Path, dst: Path, enhance: bool = False) -> dict:
+def process_audio(src: Path, dst: Path, enhance: bool = False, preroll_sec: float = 0.0) -> dict:
     """enhance=True (Mikrofon-Aufnahme / Notdurchsage): Sprach-Optimierung mit Nebengeraeusch-Entfernung, 0 dBFS (speech_enhance).
     Sonst Pass 1: Rauschen pruefen und ggf. entfernen (afftdn). Pass 2: Spitzenpegel auf 0 dBFS, MP3 192k."""
     if enhance:
         import speech_enhance
-        res = speech_enhance.enhance_speech(src, dst)
+        res = speech_enhance.enhance_speech(src, dst, preroll_sec=preroll_sec)
         res["after"] = {**_analyze(dst), **res["after"]}
         res["before"] = {**_analyze(src), **res["before"]}
         return res
@@ -132,7 +132,7 @@ def process_audio(src: Path, dst: Path, enhance: bool = False) -> dict:
             "filters": (["afftdn=nf=-25"] if noisy else []) + filters}
 
 
-async def _process_job(fid: str, src: Path, stored: str, enhance: bool = False):
+async def _process_job(fid: str, src: Path, stored: str, enhance: bool = False, preroll_sec: float = 0.0):
     dst = src.with_suffix(".out.mp3")
     try:
         if not ffmpeg_available():
@@ -142,7 +142,7 @@ async def _process_job(fid: str, src: Path, stored: str, enhance: bool = False):
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready_unprocessed", "sha256": sha, "size": size,
                                                                         "warning": "ffmpeg fehlt auf dem Server - Datei unveraendert uebernommen"}})
         else:
-            analysis = await asyncio.to_thread(process_audio, src, dst, enhance)
+            analysis = await asyncio.to_thread(process_audio, src, dst, enhance, preroll_sec)
             sha, size = _sha_size(dst)
             await store_bytes(stored, dst.read_bytes())
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size, "analysis": analysis,
@@ -283,7 +283,7 @@ async def list_order_audio(order_pk: int, user: dict = Depends(get_user)):
 
 @router.post("/orders/{order_pk}/audio")
 async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
-                             user: dict = Depends(get_user)):
+                             preroll_sec: float = Form(0.0), user: dict = Depends(get_user)):
     """source='record' + enhance='1': Mikrofon-Aufnahme (z.B. Notdurchsage) mit Sprach-Optimierung - UI fuer Auftraege folgt."""
     await _order_access(user, order_pk)
     do_enhance = str(enhance).lower() in ("1", "true", "on", "yes")
@@ -310,7 +310,7 @@ async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: 
            "uploaded_by_role": user.get("role"), "uploaded_at": datetime.now(timezone.utc).isoformat(),
            "source": "record" if source == "record" else "upload", "enhanced": do_enhance}
     await db.mbox_order_audio.insert_one(doc)
-    asyncio.create_task(_process_job(fid, src, stored, do_enhance))
+    asyncio.create_task(_process_job(fid, src, stored, do_enhance, preroll_sec))
     return _public_file(doc)
 
 @router.patch("/orders/{order_pk}/audio/{fid}")

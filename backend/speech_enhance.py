@@ -64,15 +64,24 @@ def _speech_bounds(y, sr: int):
     return hits[0] * frame, min(len(y), (hits[-1] + 3) * frame), floor
 
 
-def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dict:
+def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path], preroll_sec: float = 0.0) -> dict:
     import numpy as np
     import noisereduce as nr
     import soundfile as sf
     y, sr = _load_wav(src_wav)
     info = {"profile": None, "passes": 0}
     onset, offset, _floor = _speech_bounds(y, sr)
-    # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, max. 1 s; sonst erste 0,4 s) als Referenz
-    lead = y[:min(onset, sr)] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
+    if preroll_sec and preroll_sec > 0.5:
+        # Countdown-Aufnahme: der Vorlauf (3-2-1, niemand spricht) ist bekannt -> exakt als Rauschprofil nehmen
+        # (ohne die ersten 0,3 s Einschaltknacks) und spaeter hart abschneiden
+        pre = min(len(y), int(preroll_sec * sr))
+        lead = y[int(0.3 * sr):pre]
+        info["preroll_sec"] = round(preroll_sec, 2)
+        if onset < pre:
+            onset = pre
+    else:
+        # Eigenes Raumgeraeusch der Aufnahme (Vorlauf bis zum ersten Wort, max. 1 s; sonst erste 0,4 s) als Referenz
+        lead = y[:min(onset, sr)] if onset >= int(0.25 * sr) else y[:int(0.4 * sr)]
     noise_parts = []
     if profile and profile.exists():
         prof_wav = dst_wav.with_suffix(".profile.wav")
@@ -101,6 +110,9 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
     # Bis zum ersten Wort abschneiden (0,35 s Vorlauf + 60 ms Einblenden, damit weiche Anlaute wie S/F/Sch erhalten bleiben), Nachlauf 0,4 s
     onset2, offset2, _ = _speech_bounds(y, sr)
     keep_in, keep_out, fade = int(0.35 * sr), int(0.4 * sr), int(0.06 * sr)
+    if preroll_sec and preroll_sec > 0.5:
+        # alles vor dem Countdown-Ende weg (minus 0,2 s Reserve fuer schnelle Sprecher)
+        onset2 = max(onset2, int(max(0.0, preroll_sec - 0.2) * sr) + keep_in)
     start = max(0, onset2 - keep_in)
     end = min(len(y), offset2 + keep_out)
     pre = np.zeros(int(PRE_SEC * sr), dtype=y.dtype)
@@ -123,7 +135,7 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
     return info
 
 
-def enhance_speech(src: Path, dst: Path, profile: Optional[Path] = DEFAULT_PROFILE) -> dict:
+def enhance_speech(src: Path, dst: Path, profile: Optional[Path] = DEFAULT_PROFILE, preroll_sec: float = 0.0) -> dict:
     """src (beliebiges Format, auch webm/opus aus dem Browser) -> dst (MP3 192k, Spitze 0 dBFS)."""
     work = dst.with_suffix(".stage1.wav")
     gated = dst.with_suffix(".stage2.wav")
@@ -131,7 +143,7 @@ def enhance_speech(src: Path, dst: Path, profile: Optional[Path] = DEFAULT_PROFI
         _ff(["-i", str(src), "-vn", "-ac", "1", "-ar", str(SR), "-af", "highpass=f=90,lowpass=f=9000", "-c:a", "pcm_s16le", str(work)])
         before_peak = _peak_db(work)
         try:
-            gate = _spectral_gate(work, gated, profile)
+            gate = _spectral_gate(work, gated, profile, preroll_sec)
             stage = gated
         except Exception as e:
             logger.warning(f"Spektrales Gating uebersprungen: {e}")

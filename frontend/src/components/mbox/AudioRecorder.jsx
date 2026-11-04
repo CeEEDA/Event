@@ -13,6 +13,9 @@ const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdurchsage" }) {
   const [state, setState] = useState("idle"); // idle | recording | done
   const [sec, setSec] = useState(0);
+  const [count, setCount] = useState(0);      // Countdown 3,2,1 - Aufnahme laeuft dabei schon (Einpegeln + Rauschprofil)
+  const preroll = useRef(0);                   // Sekunden vom Aufnahmestart bis "Start" - werden serverseitig abgeschnitten
+  const t0 = useRef(0);
   const [level, setLevel] = useState(0);
   const [blob, setBlob] = useState(null);
   const [name, setName] = useState(defaultName);
@@ -53,8 +56,15 @@ export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdu
     };
     rec.current = r;
     r.start(250);
-    setSec(0); setState("recording");
-    timer.current = setInterval(() => setSec(s => { if (s + 1 >= maxSec) stop(); return s + 1; }), 1000);
+    t0.current = performance.now();
+    preroll.current = 0;
+    setSec(0); setCount(3); setState("recording");
+    const tick = (n) => {
+      if (n <= 0) { preroll.current = (performance.now() - t0.current) / 1000; setCount(0); return; }
+      setTimeout(() => { setCount(n - 1); tick(n - 1); }, 1000);
+    };
+    tick(3);
+    timer.current = setInterval(() => setSec(s => { if (s + 1 >= maxSec + 3) stop(); return s + 1; }), 1000);
     // Pegelanzeige
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -67,11 +77,11 @@ export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdu
   };
 
   const stop = () => { if (rec.current && rec.current.state !== "inactive") rec.current.stop(); };
-  const reset = () => { setBlob(null); setState("idle"); setSec(0); setLevel(0); };
+  const reset = () => { setBlob(null); setState("idle"); setSec(0); setLevel(0); setCount(0); };
   const save = () => {
     if (!blob) return;
     const ext = extFor(blob.type);
-    onSave(new File([blob], `aufnahme_${Date.now()}.${ext}`, { type: blob.type }), { name: name.trim() || defaultName });
+    onSave(new File([blob], `aufnahme_${Date.now()}.${ext}`, { type: blob.type }), { name: name.trim() || defaultName, prerollSec: Math.round(preroll.current * 100) / 100 });
   };
 
   return (
@@ -83,16 +93,25 @@ export function AudioRecorder({ onSave, busy, maxSec = 120, defaultName = "Notdu
       )}
       {state === "recording" && (
         <div className="space-y-3">
+          {count > 0 ? (
+            <div className="rounded-xl bg-gray-900 text-white py-5 text-center" data-testid="recorder-countdown">
+              <p className="text-xs uppercase tracking-widest text-gray-400">Bereit machen – Mikrofon pegelt ein</p>
+              <p className="text-6xl font-black tabular-nums leading-none mt-2" data-testid="recorder-countdown-value">{count}</p>
+              <p className="text-sm text-gray-300 mt-2">Bitte noch nicht sprechen</p>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-red-600 text-white py-3 text-center font-bold text-lg animate-pulse" data-testid="recorder-speak-now">Jetzt sprechen</div>
+          )}
           <div className="flex items-center gap-3">
             <span className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
-            <span className="font-semibold text-gray-900 tabular-nums" data-testid="recorder-time">{mmss(sec)}</span>
+            <span className="font-semibold text-gray-900 tabular-nums" data-testid="recorder-time">{mmss(Math.max(0, sec - 3))}</span>
             <span className="text-xs text-gray-400">max. {mmss(maxSec)}</span>
             <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 transition-[width] duration-75" style={{ width: `${level}%` }} /></div>
           </div>
-          <button type="button" onClick={stop} className="w-full h-12 rounded-xl bg-gray-900 text-white font-semibold flex items-center justify-center gap-2" data-testid="recorder-stop">
+          <button type="button" onClick={stop} disabled={count > 0} className="w-full h-12 rounded-xl bg-gray-900 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-40" data-testid="recorder-stop">
             <Square className="w-4 h-4" /> Aufnahme beenden
           </button>
-          <p className="text-xs text-gray-500">Deutlich und mit etwas Abstand zum Mikrofon sprechen. Nebengeräusche werden anschließend automatisch entfernt.</p>
+          <p className="text-xs text-gray-500">Erst bei „Jetzt sprechen" beginnen. Der Vorlauf wird abgeschnitten und dient als Rausch-Referenz; Nebengeräusche werden automatisch entfernt.</p>
         </div>
       )}
       {state === "done" && blob && (

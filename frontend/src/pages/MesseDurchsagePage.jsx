@@ -52,12 +52,13 @@ export default function MesseDurchsagePage() {
     return () => clearInterval(t);
   }, [eigeneOffen, load]);
 
-  const saveRecording = async (file, { name }) => {
+  const saveRecording = async (file, { name, prerollSec }) => {
     setRecBusy(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("name", name);
+      fd.append("preroll_sec", String(prerollSec || 0));
       const r = await axios.post(`${base}/${token}/record`, fd, withSession(token, { timeout: 120000 }));
       toast.success(`Aufnahme wird optimiert – automatisch gelöscht nach ${messe?.guest_keep_minutes || 15} Min.`);
       setAufnahme(false);
