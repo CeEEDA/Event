@@ -448,6 +448,59 @@ async def public_group_play(token: str, body: dict, request: Request):
             "devices": len(devices), "offline": offline, "label": f["name"]}
 
 
+@router.get("/public/{token}/group-status")
+async def public_group_status(token: str):
+    """Lampenzustand aller Messe-Geraete (parallel gelesen) fuer die Beleuchtungs-Seite."""
+    m = await _messe_by_token(token)
+    devs = await _devices_of(m)
+
+    async def one(d):
+        try:
+            res = await _forward(d, "POST", "/api/lesen", json={"namen": LAMP_VARS[:2]}, timeout=15.0)
+        except HTTPException as e:
+            res = {"ok": False, "fehler": e.detail}
+        w = res.get("werte") or {}
+        v = lambda n: None if isinstance(w.get(n), dict) else w.get(n)
+        return {"id": d["id"], "name": d.get("user_field") or d.get("serial_number"), "sps_ok": bool(res.get("ok")),
+                "sps_fehler": None if res.get("ok") else res.get("fehler"), "lampen": v("DB_HMI.Status.Lampe") or [],
+                "lampen_auswahl": v("DB_Parameter.Lampen_Auswahl") or []}
+
+    return {"devices": list(await asyncio.gather(*(one(d) for d in devs)))}
+
+
+@router.post("/public/{token}/group-lampe")
+async def public_group_lampe(token: str, body: dict, request: Request):
+    """Beleuchtung auf mehreren Geraeten: action 'ein'|'aus' oder index 1..5 (umschalten)."""
+    m = await _messe_by_token(token)
+    await _require_session(request, m)
+    _rate_public(request, f"group:{m['id']}")
+    wanted = [str(x) for x in (body.get("device_ids") or []) if str(x) in (m.get("device_ids") or [])]
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Mindestens ein Geraet auswaehlen")
+    action, idx = body.get("action"), body.get("index")
+    if action == "ein":
+        name, params = "Lampen_Ein", None
+    elif action == "aus":
+        name, params = "Lampen_Aus", None
+    elif isinstance(idx, int) and 1 <= idx <= 5:
+        name, params = "Lampe_Umschalten", {"index": str(idx)}
+    else:
+        raise HTTPException(status_code=400, detail="index 1-5 oder action ein/aus angeben")
+    devices = await db.devices.find({"id": {"$in": wanted}, "device_type": "mbox"}, {"_id": 0}).to_list(100)
+    actor = {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}
+
+    async def one(d):
+        try:
+            res = await _forward(d, "POST", f"/api/befehl/{name}", params=params, timeout=15.0)
+        except HTTPException as e:
+            res = {"ok": False, "fehler": e.detail}
+        await _audit(d, actor, f"messe/group-befehl/{name}", params, res)
+        return {"device_id": d["id"], "name": d.get("user_field") or d.get("serial_number"), **res}
+
+    results = await asyncio.gather(*(one(d) for d in devices))
+    return {"ok": all(r.get("ok") for r in results), "results": list(results)}
+
+
 @router.post("/public/{token}/group-stop")
 async def public_group_stop(token: str, body: dict, request: Request):
     m = await _messe_by_token(token)

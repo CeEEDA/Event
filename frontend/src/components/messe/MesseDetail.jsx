@@ -105,10 +105,6 @@ export function MesseDetail({ messeId, onBack }) {
               <label className="text-xs text-gray-500">Bis</label>
               <Input type="date" value={form.end_date} onChange={e => { setForm({ ...form, end_date: e.target.value }); patch({ end_date: e.target.value }); }} data-testid="messe-detail-end" />
             </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs text-gray-500">Hinweis für Besucher (erscheint auf der QR-Seite)</label>
-              <Input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} onBlur={() => form.note !== (m.note || "") && patch({ note: form.note }, "Gespeichert")} placeholder="z.B. Lampen antippen – Testdurchsage abspielen" data-testid="messe-detail-note" />
-            </div>
           </div>
           <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-gray-100">
             <Button variant="outline" size="sm" onClick={neuerLink} data-testid="messe-new-link-btn"><RefreshCw className="w-4 h-4 mr-1" /> Neuen Link erzeugen</Button>

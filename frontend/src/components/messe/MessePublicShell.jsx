@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { AlertCircle, Lock, Timer } from "lucide-react";
+import { AlertCircle, Lock } from "lucide-react";
 import { BACKEND_URL } from "../../lib/api";
 import { Logo } from "../Logo";
 
@@ -43,26 +43,16 @@ export function useMesseSession(token) {
   return { ...state, restSec, locked };
 }
 
-const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
 export function Shell({ messe, session, children }) {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col" data-testid="messe-public-page">
       <header className="px-5 pt-6 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="bg-white rounded-2xl px-4 py-3 inline-flex"><Logo size="small" /></div>
-          {session?.ready && !session.locked && (
-            <span className={`mt-1 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border ${session.restSec <= 60 ? "border-amber-400 text-amber-300" : "border-gray-700 text-gray-300"}`} data-testid="messe-session-timer">
-              <Timer className="w-3.5 h-3.5" /> {mmss(session.restSec)}
-            </span>
-          )}
-        </div>
+        <div className="bg-white rounded-2xl px-4 py-3 inline-flex"><Logo size="small" /></div>
         {messe && (
           <div className="mt-4">
             <p className="text-xs uppercase tracking-[0.2em] text-fuchsia-400 font-semibold">Messe-Demo</p>
             <h1 className="text-2xl font-bold leading-tight mt-1" data-testid="messe-public-title">{messe.name}</h1>
             {messe.location && <p className="text-sm text-gray-400">{messe.location}</p>}
-            {messe.note && <p className="text-sm text-gray-300 mt-2 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2" data-testid="messe-public-note">{messe.note}</p>}
           </div>
         )}
       </header>
