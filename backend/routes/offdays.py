@@ -361,26 +361,10 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
     overtime_deducted_h = 0.0
     _skip_overtime_reason = None
     if affect_overtime and delta < 0:
-        # 1) Urlaub/Krank an diesem Tag?
-        _off_req = await db.time_off_requests.find_one({
-            "user_id": user_id, "status": "approved",
-            "type": {"$in": ["urlaub", "krank"]},
-            "start_date": {"$lte": ref_date},
-            "end_date": {"$gte": ref_date},
-        }, {"_id": 0, "type": 1})
-        if _off_req:
-            _skip_overtime_reason = f"Urlaub/Krank ({_off_req.get('type')})"
-        else:
-            # 2) Echter time_entry (gestempelt oder manuelle Arbeitszeit,
-            #    aber KEINE Korrektur/Absence-Pseudo-Eintraege)
-            _te = await db.time_entries.find_one({
-                "user_id": user_id, "date": ref_date,
-                "type": {"$nin": ["urlaub", "krank", "ueberstundenabbau",
-                                  "feiertag", "korrektur"]},
-                "duration_minutes": {"$ne": None, "$gt": 0},
-            }, {"_id": 0, "duration_minutes": 1})
-            if _te:
-                _skip_overtime_reason = "gestempelt"
+        # Urlaub/Krank/Abbau (auch direkt eingetragener Urlaub aus
+        # vacation_entries - fehlte bisher) oder echter time_entry?
+        from routes import employee as _em
+        _skip_overtime_reason = await _em.offday_overtime_skip_reason(user_id, ref_date)
 
     if affect_overtime and delta < 0 and not _skip_overtime_reason:
         try:
@@ -395,13 +379,18 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
                     {"$inc": {"overtime_baseline": overtime_deducted_h}},
                     upsert=True,
                 )
-                await _em._recompute_overtime_for_year(user_id, _refdt.year, force=True)
+                # WICHTIG: Audit-Eintrag VOR dem Recompute schreiben - der
+                # Recompute liest daraus, dass dieser Tag bereits bezahlt ist und
+                # zieht ihn in der Tagesbilanz NICHT ein zweites Mal ab
+                # (Bug: Martin - ein Offday, zweimal Stunden abgezogen).
                 await _em._log_audit(
                     user_id, "offday_manual_adjust", caller,
                     after={"ref_date": ref_date, "delta": delta,
                            "overtime_delta_h": overtime_deducted_h, "note": note},
-                    summary=f"Offday abgezogen {ref_date} ({delta:+d} Tag / {overtime_deducted_h:.2f}h Ueberstunden)",
+                    summary=f"Offday abgezogen {ref_date} ({delta:+d} Tag / {overtime_deducted_h:.2f}h Ueberstunden, "
+                            f"einmalig - der Tag selbst zählt in der Tagesbilanz neutral)",
                 )
+                await _em._recompute_overtime_for_year(user_id, _refdt.year, force=True)
         except Exception as _e:
             import logging
             logging.getLogger("employee").warning(f"Offday-Manual-Adjust Overtime-Update fehlgeschlagen: {_e}")

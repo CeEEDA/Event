@@ -988,42 +988,126 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
                 range_start = _bset_date + timedelta(days=1)
         except (ValueError, TypeError):
             pass
+    # Zeitpunkt der letzten manuellen Baseline-Setzung (ISO-String) - alles was
+    # DANACH gebucht wurde, ist NICHT im manuell gesetzten Wert enthalten.
+    _baseline_cutoff_iso = hr.get("overtime_baseline_set_at") if range_start > year_start else None
+
+    def _booked_after_baseline(created_at) -> bool:
+        if not _baseline_cutoff_iso:
+            return True
+        return bool(created_at) and str(created_at) > str(_baseline_cutoff_iso)
 
     # 1) Feiertage (RLP)
     holidays = set(_get_holidays(year).keys())
 
     # 2) Urlaub/Krank/Abbau-Tage aus time_off_requests
     off_days: set = set()
-    abbau_days: set = set()
-    offday_days: set = set()  # Ausgleichstage aus shift_assignments (is_offday)
+    # Ueberstundenabbau pro Tag: date -> {"hours": float|None (None = ganzer Tag), "counts": bool}
+    # counts=False: Tag liegt vor dem manuell gesetzten Wert und der Abbau war
+    # schon vorher gebucht -> bereits im gesetzten Wert enthalten.
+    abbau_by_day: dict = {}
+    # Offdays, deren Ueberstunden-Abzug bereits direkt auf die Baseline gebucht
+    # wurde (Einsatzplan-Offday oder Offday-Konto "Abziehen"). Diese Tage sind
+    # in der Tagesbilanz NEUTRAL, sonst wird derselbe Offday doppelt abgezogen.
+    prebooked_offdays: dict = {}  # date -> Label
+    _year_start_s, _year_end_s = f"{year}-01-01", f"{year}-12-31"
     off_cursor = db.time_off_requests.find({
         "user_id": user_id, "status": "approved",
         "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
-    }, {"_id": 0, "type": 1, "start_date": 1, "end_date": 1, "all_day": 1})
+    }, {"_id": 0, "type": 1, "start_date": 1, "end_date": 1, "all_day": 1,
+        "start_time": 1, "end_time": 1, "hours_deducted": 1,
+        "created_at": 1, "resolved_at": 1})
     async for r in off_cursor:
         try:
             s = _date.fromisoformat(r["start_date"])
-            e = _date.fromisoformat(r["end_date"])
+            e = _date.fromisoformat(r.get("end_date") or r["start_date"])
         except (KeyError, ValueError, TypeError):
             continue
-        target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
+        is_abbau = (r.get("type") or "").lower() == "ueberstundenabbau"
+        if not is_abbau:
+            cur = s
+            while cur <= e:
+                if cur.year == year:
+                    off_days.add(cur.isoformat())
+                cur += timedelta(days=1)
+            continue
+        # Ueberstundenabbau: Stunden pro Tag bestimmen (None = ganzer Tag = Tages-Soll)
+        fixed_h = None
+        if r.get("hours_deducted") not in (None, ""):
+            try:
+                fixed_h = float(r.get("hours_deducted"))
+            except (TypeError, ValueError):
+                fixed_h = None
+        elif not r.get("all_day", True) and r.get("start_time") and r.get("end_time"):
+            try:
+                sh, sm = [int(x) for x in str(r["start_time"]).split(":")[:2]]
+                eh, em = [int(x) for x in str(r["end_time"]).split(":")[:2]]
+                fixed_h = max(0.0, ((eh * 60 + em) - (sh * 60 + sm)) / 60.0)
+            except (TypeError, ValueError):
+                fixed_h = None
+        # Tage VOR dem manuell gesetzten Stand gelten als darin enthalten
+        # (gleiche Regel wie fuer alle anderen Tage) - auch wenn der Antrag
+        # erst danach (nach-)erfasst wurde.
+        cur = s
+        while cur <= e:
+            if cur.year == year and (fixed_h is not None or cur.weekday() < 5):
+                abbau_by_day[cur.isoformat()] = {
+                    "hours": fixed_h,
+                    "counts": cur >= range_start,
+                }
+            cur += timedelta(days=1)
+    abbau_days: set = set(abbau_by_day.keys())
+
+    # 2a) Direkt eingetragene Urlaube (vacation_entries ohne Antrag). Diese
+    # wurden bisher NICHT beruecksichtigt -> Urlaubstage wurden als "kein
+    # Stempel" mit -Soll verbucht (Urlaub-Bug).
+    vac_cursor = db.vacation_entries.find({
+        "user_id": user_id,
+        "start_date": {"$lte": _year_end_s},
+        "end_date": {"$gte": _year_start_s},
+    }, {"_id": 0, "start_date": 1, "end_date": 1})
+    async for v in vac_cursor:
+        try:
+            s = _date.fromisoformat(v["start_date"])
+            e = _date.fromisoformat(v.get("end_date") or v["start_date"])
+        except (KeyError, ValueError, TypeError):
+            continue
         cur = s
         while cur <= e:
             if cur.year == year:
-                target.add(cur.isoformat())
+                off_days.add(cur.isoformat())
             cur += timedelta(days=1)
 
     # 2b) Offdays aus der Einsatzplanung (shift_assignments mit is_offday=True).
-    # Ein Offday ist ein bezahlter Ersatzruhetag - der MA arbeitet nicht,
-    # aber das Soll fuer diesen Tag entfaellt komplett (genauso wie Urlaub).
+    # Beim Anlegen wird der Ueberstunden-Abzug DIREKT auf die Baseline gebucht
+    # (Feld overtime_deducted_h; Alt-Eintraege ohne Feld: Abzug = Tages-Soll).
+    # Der Tag selbst ist deshalb in der Tagesbilanz neutral - frueher wurde hier
+    # zusaetzlich nochmal das Soll abgezogen (Doppelabzug).
     off_cur2 = db.shift_assignments.find({
         "user_id": user_id, "is_offday": True,
         "date": {"$regex": f"^{year}-"},
-    }, {"_id": 0, "date": 1})
+    }, {"_id": 0, "date": 1, "created_at": 1, "overtime_deducted_h": 1})
     async for r in off_cur2:
         d = r.get("date")
-        if d:
-            offday_days.add(d)
+        if not d:
+            continue
+        if r.get("overtime_deducted_h", None) == 0:
+            continue  # kein Abzug gebucht (z.B. Urlaub/gestempelt) -> normaler Tag
+        if _booked_after_baseline(r.get("created_at")):
+            prebooked_offdays[d] = "Offday (Einsatzplan, bereits vom Konto abgezogen)"
+
+    # 2c) Offdays aus dem Offday-Konto ("Abziehen" mit Ueberstunden-Effekt).
+    # Quelle: Audit-Log, dort steht der tatsaechlich gebuchte Stundenbetrag.
+    adj_cursor = db.time_audit_log.find({
+        "target_user_id": user_id, "action": "offday_manual_adjust",
+        "after.overtime_delta_h": {"$lt": 0},
+        "after.ref_date": {"$regex": f"^{year}-"},
+    }, {"_id": 0, "after.ref_date": 1, "created_at": 1})
+    async for a in adj_cursor:
+        d = (a.get("after") or {}).get("ref_date")
+        if d and _booked_after_baseline(a.get("created_at")):
+            prebooked_offdays[d] = "Offday (Offday-Konto, bereits vom Konto abgezogen)"
+    offday_days: set = set(prebooked_offdays.keys())
 
     # 3) time_entries aggregiert pro Tag (Echtarbeit, keine Urlaub-Pseudo-Eintraege)
     #    + Erkennung von Nachtschicht-Folgetagen (Schicht über Mitternacht).
@@ -1070,7 +1154,16 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     minus_days = 0
     plus_minutes = 0.0
     minus_minutes = 0.0
-    new_detail_logs: list = []  # NEU zu loggende Tage
+    # Pro Tag: Wirkung auf das Stundenkonto (fuer das Aenderungsprotokoll).
+    # date -> {soll_min, ist_min, abbau_min, effect_min, reason}
+    day_effects: dict = {}
+    abbau_minutes_total = 0.0
+
+    def _abbau_minutes_for(date_obj, info) -> float:
+        if info.get("hours") is not None:
+            return float(info["hours"]) * 60.0
+        return float(_soll_minutes_from_schedule(schedule, date_obj.weekday())) if has_schedule else 0.0
+
     cur = range_start
     while cur <= end_day:
         date_str = cur.isoformat()
@@ -1080,22 +1173,32 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             continue
         ist = ist_by_day.get(date_str, 0.0)
         soll = 0
+        abbau_min = 0.0
         reason = ""
         if date_str in holidays:
             reason = "Feiertag (" + _get_holidays(year).get(date_str, "?") + ")"
         elif date_str in off_days:
             reason = "Urlaub/Krank"
         elif date_str in abbau_days:
-            reason = "Überstundenabbau"
+            # Ueberstundenabbau: Das Tages-Soll wird um die Abbau-Stunden reduziert
+            # und genau diese Stunden werden vom Konto abgezogen. Ganztags:
+            # Soll 0, Abzug = Tages-Soll. Stundenweise (z.B. 4,5h): Rest-Soll
+            # bleibt, Abzug = 4,5h.
+            # BUG-FIX (Nov 2026): Frueher wurde der Abbau nur einmalig direkt in
+            # overtime_hours geschrieben und beim naechsten Recompute wieder
+            # ueberschrieben -> abgebaute Stunden kamen kommentarlos zurueck.
+            info = abbau_by_day[date_str]
+            full_soll = _soll_minutes_from_schedule(schedule, cur.weekday()) if has_schedule else 0
+            if info.get("counts", True):
+                abbau_min = _abbau_minutes_for(cur, info)
+            soll = max(0, full_soll - (_abbau_minutes_for(cur, info)))
+            reason = f"Überstundenabbau ({round(_abbau_minutes_for(cur, info) / 60.0, 2)}h)"
         elif date_str in offday_days:
-            # Ersatzruhetag (Offday) - der MA bleibt zu Hause, aber der Tag zaehlt
-            # als "geleistet" gegen sein Soll. Wir setzen soll = geplante Tagesarbeitszeit,
-            # damit ist(0) - soll(x) = -x die Ueberstunden um x reduziert. So wird die
-            # zuvor am Sonntag/Feiertag verdiente +8h Ueberstunde wieder aufgezehrt
-            # (Verbrauch des Offdays statt Auszahlung).
-            reason = "Offday (Ausgleichstag)"
-            if has_schedule:
-                soll = _soll_minutes_from_schedule(schedule, cur.weekday())
+            # Offday (Ersatzruhetag): Der Ueberstunden-Abzug wurde beim Eintragen
+            # bereits DIREKT gebucht (Baseline). Der Tag ist hier deshalb neutral.
+            # BUG-FIX (Nov 2026): Frueher wurde hier zusaetzlich das Soll
+            # abgezogen -> derselbe Offday kostete doppelt.
+            reason = prebooked_offdays.get(date_str) or "Offday"
         elif date_str in night_followup_days and ist == 0:
             # Tag X+1 nach einer Nachtschicht (Vortag 22:30 -> 08:10 heute).
             # Die Arbeitszeit wurde bereits auf den Schicht-Start-Tag gebucht.
@@ -1108,14 +1211,43 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             plus_days += 1; plus_minutes += diff
         elif diff < -0.5:
             minus_days += 1; minus_minutes += abs(diff)
-            # Detail-Eintrag fuer Minus-Tage merken (Plus-Tage logge ich nicht
-            # einzeln — sonst Spam)
-            new_detail_logs.append({
-                "date": date_str, "soll_min": soll, "ist_min": ist, "diff_min": diff,
-                "reason": reason or ("Kein Stempel" if soll > 0 else "")
-            })
         total_diff_minutes += diff
+        abbau_minutes_total += abbau_min
+        if not reason:
+            if soll > 0 and ist == 0:
+                reason = "Kein Stempel"
+            elif diff < -0.5:
+                reason = "unter Soll"
+            elif diff > 0.5:
+                reason = "über Soll"
+        day_effects[date_str] = {
+            "soll_min": soll, "ist_min": ist, "abbau_min": abbau_min,
+            "effect_min": diff - abbau_min, "reason": reason,
+        }
         cur += timedelta(days=1)
+
+    # Ueberstundenabbau ausserhalb der Schleife: zukuenftige Tage (Abzug sofort
+    # bei Genehmigung, damit das Konto den geplanten Abbau zeigt) und Tage vor
+    # dem manuell gesetzten Wert, deren Abbau erst NACH der Setzung gebucht wurde.
+    for _d_str, _info in abbau_by_day.items():
+        if not _info.get("counts", True) or _d_str in day_effects:
+            continue
+        if _d_str in holidays or _d_str in off_days:
+            continue
+        try:
+            _d_obj = _date.fromisoformat(_d_str)
+        except ValueError:
+            continue
+        if range_start <= _d_obj <= end_day:
+            continue  # offener Stempel-Tag (geskippt) - wird spaeter verbucht
+        _m = _abbau_minutes_for(_d_obj, _info)
+        if _m <= 0:
+            continue
+        abbau_minutes_total += _m
+        day_effects[_d_str] = {
+            "soll_min": 0, "ist_min": 0.0, "abbau_min": _m, "effect_min": -_m,
+            "reason": "Überstundenabbau (geplant)",
+        }
 
     diff_hours = round(total_diff_minutes / 60.0, 2)
 
@@ -1138,6 +1270,9 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             deduction += float(a.get("hours_deducted") or 0)
         except (TypeError, ValueError):
             continue
+    # 6b) Genehmigte Ueberstundenabbau-Antraege (time_off_requests, siehe Schritt 5)
+    abbau_hours = round(abbau_minutes_total / 60.0, 2)
+    deduction += abbau_hours
 
     # 7) Baseline – falls noch nicht gesetzt, rueckwaerts so berechnen dass
     # der aktuell angezeigte Wert ERHALTEN bleibt (Migration ohne Sprung).
@@ -1212,11 +1347,23 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
                 # Nichts an overtime_hours aendern - Admin-Wert ist Wahrheit
                 return current_value
 
-    update = {"overtime_hours": new_overtime, "updated_at": datetime.now(timezone.utc).isoformat()}
+    prev_calc = (hr or {}).get("overtime_calc") or {}
+    update = {
+        "overtime_hours": new_overtime,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        # Rechenweg merken, damit das naechste Protokoll erklaeren kann WAS sich geaendert hat
+        "overtime_calc": {
+            "baseline_h": round(float(baseline), 2),
+            "diff_h": diff_hours,
+            "deduction_h": round(deduction, 2),
+            "abbau_h": abbau_hours,
+            "range_start": range_start.isoformat(),
+            "at": datetime.now(timezone.utc).isoformat(),
+        },
+    }
     if not hr:
         await db.hr_data.insert_one({
             "user_id": user_id, "year": year,
-            "overtime_hours": new_overtime,
             "overtime_baseline": baseline,
             "vacation_days_total": 0, "vacation_days_used": 0,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1227,51 +1374,112 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             {"user_id": user_id, "year": year},
             {"$set": update},
         )
-    logger.info(f"Overtime recompute: user={user_id} year={year} baseline={baseline}h + diff={diff_hours}h - deduction={deduction}h = {new_overtime}h (plus={plus_days}d/+{round(plus_minutes/60.0,2)}h, minus={minus_days}d/-{round(minus_minutes/60.0,2)}h)")
+    logger.info(f"Overtime recompute: user={user_id} year={year} baseline={baseline}h + diff={diff_hours}h - deduction={deduction}h = {new_overtime}h (plus={plus_days}d/+{round(plus_minutes/60.0,2)}h, minus={minus_days}d/-{round(minus_minutes/60.0,2)}h, abbau={abbau_hours}h)")
 
-    # 8) Audit-Log: Detail-Eintraege fuer NEU automatisch gebuchte Minus-Tage
     sys_caller = audit_caller or {"id": None, "name": "System (Auto-Bilanz)", "role": "system"}
-    if new_detail_logs:
-        # Schon geloggte Tage (per action+date+user) NICHT erneut loggen
-        existing = set()
-        existing_cursor = db.time_audit_log.find(
-            {"target_user_id": user_id, "action": "auto_balance_day"},
-            {"_id": 0, "details.date": 1}
-        )
-        async for ex in existing_cursor:
-            d = (ex.get("details") or {}).get("date")
-            if d: existing.add(d)
-        for entry in new_detail_logs:
-            if entry["date"] in existing:
-                continue
-            diff_h = round(entry["diff_min"] / 60.0, 2)
-            soll_h = round(entry["soll_min"] / 60.0, 2)
-            ist_h = round(entry["ist_min"] / 60.0, 2)
-            try:
-                d_de = datetime.fromisoformat(entry["date"]).strftime("%d.%m.%Y")
-            except Exception:
-                d_de = entry["date"]
-            summary = f"{d_de}: {diff_h:+.2f}h (Soll {soll_h}h, Ist {ist_h}h{', ' + entry['reason'] if entry['reason'] else ''})"
-            await _log_audit(user_id, "auto_balance_day", sys_caller,
-                             summary=summary, details=entry)
 
-    # 9) Audit-Log: Zusammenfassung (aggregiert) – nur wenn was passiert ist
-    #    UND sich der Saldo tatsaechlich veraendert hat. Das verhindert Log-
-    #    Spam bei jedem Clock-In wenn der Recompute lediglich denselben Wert
-    #    berechnet (frueher wurde bei jedem Trigger ein Eintrag geschrieben,
-    #    auch wenn nichts geaendert war -> viele identische Zeilen im Audit).
+    def _de(d_iso: str) -> str:
+        try:
+            return datetime.fromisoformat(d_iso).strftime("%d.%m.%Y")
+        except Exception:
+            return d_iso
+
+    # 8) Audit-Log pro Tag: JEDE automatische Wirkung eines Tages auf das Konto
+    #    (Plus, Minus, Abbau) wird protokolliert - und erneut, sobald sich die
+    #    Wirkung eines Tages spaeter aendert (z.B. Krankmeldung nachgetragen,
+    #    Stempelzeit korrigiert). Frueher wurde nur das ERSTE Minus eines Tages
+    #    geloggt; spaetere Gutschriften/Rueckbuchungen waren unsichtbar.
+    try:
+        last_logged: dict = {}
+        async for ex in db.time_audit_log.find(
+            {"target_user_id": user_id, "action": "auto_balance_day",
+             "details.date": {"$regex": f"^{year}-"}},
+            {"_id": 0, "details": 1, "created_at": 1},
+        ).sort("created_at", 1):
+            det = ex.get("details") or {}
+            d = det.get("date")
+            if not d:
+                continue
+            val = det.get("effect_min")
+            if val is None:
+                val = det.get("diff_min")  # Alt-Eintraege (nur Minus-Tage)
+            try:
+                last_logged[d] = float(val or 0)
+            except (TypeError, ValueError):
+                continue
+        # Tage, deren fruehere Wirkung jetzt komplett entfaellt (z.B. geplanter
+        # Abbau geloescht) - nur im aktuell berechneten Zeitraum / Zukunft.
+        for d, prev_val in last_logged.items():
+            if d in day_effects or abs(prev_val) <= 0.5:
+                continue
+            try:
+                d_obj = _date.fromisoformat(d)
+            except ValueError:
+                continue
+            if d_obj < range_start or (open_skip_date and d_obj == open_skip_date):
+                continue
+            day_effects[d] = {"soll_min": 0, "ist_min": 0.0, "abbau_min": 0.0,
+                              "effect_min": 0.0, "reason": "entfällt"}
+        for d in sorted(day_effects.keys()):
+            e = day_effects[d]
+            eff = float(e["effect_min"])
+            prev_val = last_logged.get(d)
+            if prev_val is None:
+                if abs(eff) <= 0.5:
+                    continue
+            elif abs(eff - prev_val) <= 0.5:
+                continue
+            eff_h = round(eff / 60.0, 2)
+            parts = [f"Soll {round(e['soll_min'] / 60.0, 2)}h", f"Ist {round(e['ist_min'] / 60.0, 2)}h"]
+            if e.get("abbau_min"):
+                parts.append(f"Abbau {round(e['abbau_min'] / 60.0, 2)}h")
+            if e.get("reason"):
+                parts.append(e["reason"])
+            if prev_val is None:
+                summary = (f"{_de(d)}: {eff_h:+.2f}h automatisch "
+                           f"{'gutgeschrieben' if eff > 0 else 'abgezogen'} ({', '.join(parts)})")
+            else:
+                chg_h = round((eff - prev_val) / 60.0, 2)
+                summary = (f"{_de(d)} GEÄNDERT: {chg_h:+.2f}h – Tag zählt jetzt {eff_h:+.2f}h statt bisher "
+                           f"{round(prev_val / 60.0, 2):+.2f}h ({', '.join(parts)})")
+            await _log_audit(user_id, "auto_balance_day", sys_caller, summary=summary,
+                             details={"date": d, **e, "diff_min": e["ist_min"] - e["soll_min"],
+                                      "previous_effect_min": prev_val})
+    except Exception as _e:
+        logger.warning(f"Audit-Log Tagesbilanz fehlgeschlagen: {_e}")
+
+    # 9) Audit-Log: Zusammenfassung - nur wenn sich der Saldo veraendert hat.
+    #    Erklaert die Aenderung in ihre Ursachen: Tagesbilanz, Ueberstundenabbau,
+    #    direkte Buchungen (Basiswert) und - falls vorhanden - eine Abweichung
+    #    zum vorher gespeicherten Wert (Wert war ausserhalb der Berechnung
+    #    veraendert worden und wird jetzt korrigiert).
     prev_ot = float(hr.get("overtime_hours") or 0) if hr else None
     balance_changed = prev_ot is None or abs(new_overtime - prev_ot) > 0.01
-    if (plus_days or minus_days or deduction > 0) and balance_changed:
+    if balance_changed:
+        change = round(new_overtime - (prev_ot or 0.0), 2)
+        causes = []
+        if prev_calc:
+            d_diff = round(diff_hours - float(prev_calc.get("diff_h") or 0), 2)
+            d_ded = round(-(deduction - float(prev_calc.get("deduction_h") or 0)), 2)
+            d_base = round(float(baseline) - float(prev_calc.get("baseline_h") or 0), 2)
+            rest = round(change - d_diff - d_ded - d_base, 2)
+            if abs(d_diff) >= 0.01:
+                causes.append(f"Tagesbilanz {d_diff:+.2f}h")
+            if abs(d_ded) >= 0.01:
+                causes.append(f"Überstundenabbau {d_ded:+.2f}h")
+            if abs(d_base) >= 0.01:
+                causes.append(f"direkte Buchung (Offday/Korrektur) {d_base:+.2f}h")
+            if abs(rest) >= 0.01:
+                causes.append(f"Korrektur eines außerhalb der Berechnung geänderten Werts {rest:+.2f}h")
         summary_text = (
-            f"Recompute Stundenkonto {year}: "
-            f"+{round(plus_minutes/60.0,2)}h an {plus_days} Tag(en), "
-            f"-{round(minus_minutes/60.0,2)}h an {minus_days} Tag(en), "
-            f"Abbau {round(deduction,2)}h, "
-            f"Saldo: {new_overtime:+.2f}h"
+            f"Stundenkonto {year} automatisch neu berechnet: "
+            f"{(prev_ot or 0.0):.2f}h → {new_overtime:.2f}h ({change:+.2f}h)"
+            + (f". Ursache: {'; '.join(causes)}" if causes else "")
+            + f". Rechnung: Basiswert {float(baseline):.2f}h + Tagesbilanz {diff_hours:+.2f}h"
+            + f" − Abbau {round(deduction, 2):.2f}h = {new_overtime:.2f}h"
         )
         await _log_audit(user_id, "auto_balance_recompute", sys_caller,
-                         before={"overtime_hours": float(hr.get("overtime_hours") or 0)} if hr else None,
+                         before={"overtime_hours": prev_ot} if hr else None,
                          after={"overtime_hours": new_overtime},
                          summary=summary_text,
                          details={
@@ -1279,12 +1487,128 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
                              "baseline_h": float(baseline),
                              "diff_h": diff_hours,
                              "deduction_h": round(deduction, 2),
+                             "abbau_h": abbau_hours,
                              "plus_days": plus_days, "plus_h": round(plus_minutes/60.0, 2),
                              "minus_days": minus_days, "minus_h": round(minus_minutes/60.0, 2),
                              "new_overtime_h": new_overtime,
+                             "change_h": change,
+                             "causes": causes,
+                             "range_start": range_start.isoformat(),
                          })
 
     return new_overtime
+
+
+async def _recompute_and_describe(user_id: str, start_date: Optional[str], end_date: Optional[str] = None) -> str:
+    """Stundenkonto fuer alle betroffenen Jahre neu berechnen (force=True, legitime
+    Mutation) und eine kurze Beschreibung "alt h → neu h" fuers Protokoll liefern."""
+    try:
+        y0 = int(str(start_date)[:4])
+        y1 = int(str(end_date or start_date)[:4])
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for y in range(min(y0, y1), max(y0, y1) + 1):
+        try:
+            hr = await db.hr_data.find_one({"user_id": user_id, "year": y}, {"_id": 0, "overtime_hours": 1}) or {}
+            before = float(hr.get("overtime_hours") or 0)
+            after = await _recompute_overtime_for_year(user_id, y, force=True)
+            parts.append(f"{y}: {before:.2f}h → {float(after):.2f}h")
+        except Exception as _e:
+            logger.warning(f"Recompute nach Aenderung fehlgeschlagen (user={user_id}, year={y}): {_e}")
+    return ", ".join(parts)
+
+
+async def offday_overtime_skip_reason(user_id: str, date_str: str) -> Optional[str]:
+    """Grund, warum fuer einen Offday an `date_str` KEINE Ueberstunden abgezogen
+    werden duerfen (None = Abzug ok). Der Tag war ohnehin frei (Urlaub/Krank/
+    Abbau - auch direkt eingetragener Urlaub) oder der MA hat gearbeitet."""
+    _req = await db.time_off_requests.find_one({
+        "user_id": user_id, "status": "approved",
+        "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
+        "start_date": {"$lte": date_str}, "end_date": {"$gte": date_str},
+    }, {"_id": 0, "type": 1})
+    if _req:
+        return {"urlaub": "Urlaub", "krank": "Krank", "ueberstundenabbau": "Überstundenabbau"}.get(_req.get("type"), _req.get("type"))
+    _vac = await db.vacation_entries.find_one({
+        "user_id": user_id, "start_date": {"$lte": date_str}, "end_date": {"$gte": date_str},
+    }, {"_id": 0, "id": 1})
+    if _vac:
+        return "Urlaub"
+    _te = await db.time_entries.find_one({
+        "user_id": user_id, "date": date_str,
+        "type": {"$nin": ["urlaub", "krank", "ueberstundenabbau", "feiertag", "korrektur"]},
+        "duration_minutes": {"$ne": None, "$gt": 0},
+    }, {"_id": 0, "duration_minutes": 1})
+    if _te:
+        return "gestempelt"
+    return None
+
+
+async def _offday_book_overtime(user_id: str, date_str: str, assignment_id: Optional[str] = None) -> tuple:
+    """Offday aus der Einsatzplanung: Ueberstunden-Abzug (Tages-Soll) direkt auf
+    die Baseline buchen - AUSSER der Tag war ohnehin frei / gearbeitet.
+    Der gebuchte Betrag wird am Assignment gespeichert (overtime_deducted_h),
+    damit Loeschen/Umwandeln exakt denselben Betrag zurueckbucht und der
+    Recompute weiss, dass der Tag bereits bezahlt ist (kein Doppelabzug).
+    Returns (hours_deducted, skip_reason)."""
+    hours = 0.0
+    skip = await offday_overtime_skip_reason(user_id, date_str)
+    if not skip:
+        try:
+            _ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0}) or {}
+            _dobj = datetime.strptime(str(date_str or ""), "%Y-%m-%d").date()
+            hours = round(_soll_minutes_from_schedule(_ws, _dobj.weekday()) / 60.0, 2)
+            if hours > 0:
+                await db.hr_data.update_one(
+                    {"user_id": user_id, "year": _dobj.year},
+                    {"$inc": {"overtime_baseline": -hours}},
+                    upsert=True,
+                )
+        except Exception as _e:
+            logger.warning(f"Offday-Ueberstundenabzug fehlgeschlagen ({user_id} {date_str}): {_e}")
+            hours = 0.0
+    if assignment_id:
+        await db.shift_assignments.update_one(
+            {"id": assignment_id},
+            {"$set": {"overtime_deducted_h": hours, "overtime_skip_reason": skip}},
+        )
+    return hours, skip
+
+
+async def _offday_refund_overtime(prev: dict) -> float:
+    """Gegenstueck zu _offday_book_overtime beim Loeschen/Umwandeln eines Offdays.
+    Bucht genau den damals abgezogenen Betrag zurueck - aber NUR, wenn der
+    Abzug nach der letzten manuellen Setzung des Stundenkontos gebucht wurde.
+    Sonst ist er im manuell gesetzten Wert schon nicht mehr enthalten und eine
+    Rueckbuchung wuerde Stunden 'verschenken' (Bug: Ueberstunden kamen zurueck)."""
+    uid = prev.get("user_id")
+    off_date = str(prev.get("date") or "")
+    if not uid or not off_date[:4].isdigit():
+        return 0.0
+    y = int(off_date[:4])
+    if "overtime_deducted_h" in prev:
+        hours = float(prev.get("overtime_deducted_h") or 0)
+    else:  # Alt-Eintrag: damals wurde immer das Tages-Soll abgezogen
+        _ws = await db.work_schedules.find_one({"user_id": uid}, {"_id": 0}) or {}
+        try:
+            _d_obj = datetime.strptime(off_date, "%Y-%m-%d").date()
+        except ValueError:
+            return 0.0
+        hours = round(_soll_minutes_from_schedule(_ws, _d_obj.weekday()) / 60.0, 2)
+    if hours <= 0:
+        return 0.0
+    hr = await db.hr_data.find_one({"user_id": uid, "year": y}, {"_id": 0}) or {}
+    reason = (hr.get("overtime_baseline_reason") or "").lower()
+    set_at = hr.get("overtime_baseline_set_at")
+    if reason.startswith("admin-manuell") and set_at and str(prev.get("created_at") or "") <= str(set_at):
+        return 0.0
+    await db.hr_data.update_one(
+        {"user_id": uid, "year": y},
+        {"$inc": {"overtime_baseline": hours}},
+        upsert=False,
+    )
+    return hours
 
 
 @router.post("/time/force-clock-out/{user_id}")
@@ -2471,6 +2795,29 @@ async def overtime_lock_all_current(token: str = Query(...), year: int = Query(.
     return {"dry_run": dry_run, "affected_count": len(affected), "affected": affected}
 
 
+@router.post("/overtime/recompute-all")
+async def overtime_recompute_all(token: str = Query(...), year: int = Query(...), confirm: bool = Query(False)):
+    """Stundenkonto aller aktiven Mitarbeiter des Jahres einmalig neu berechnen (force, mit Protokoll) - z.B. nach dem Nov-2026-Fix.
+    Ohne confirm=true passiert nichts (Schutz vor versehentlichem Aufruf)."""
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not confirm:
+        return {"applied": False, "hint": "confirm=true anhaengen, um alle Konten des Jahres neu zu berechnen"}
+    rows = []
+    async for hr in db.hr_data.find({"year": year}, {"_id": 0, "user_id": 1, "overtime_hours": 1}):
+        uid = hr.get("user_id")
+        user = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "is_active": 1})
+        if not user or user.get("is_active") is False:
+            continue
+        before = round(float(hr.get("overtime_hours") or 0), 2)
+        after = round(float(await _recompute_overtime_for_year(uid, year, force=True)), 2)
+        rows.append({"user_id": uid, "user_name": user.get("name"), "before": before, "after": after, "delta": round(after - before, 2)})
+    rows.sort(key=lambda r: abs(r["delta"]), reverse=True)
+    return {"applied": True, "year": year, "count": len(rows), "changed": sum(1 for r in rows if abs(r["delta"]) >= 0.01), "rows": rows}
+
+
+
 @router.post("/overtime/emergency-reset")
 async def emergency_reset_overtime(token: str = Query(...), year: int = Query(...),
                                     dry_run: bool = Query(True), reset_to_zero: bool = Query(False)):
@@ -3032,22 +3379,24 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
                 hours_to_deduct = days * 8.0  # Fallback nur wenn Datum-Parsing scheitert
         else:
             hours_to_deduct = 0
-        if hours_to_deduct > 0:
-            hr = await db.hr_data.find_one({"user_id": target_user_id}, {"_id": 0})
-            current = float(hr.get("overtime_hours", 0)) if hr else 0.0
-            new_val = round(current - hours_to_deduct, 2)
-            await db.hr_data.update_one(
-                {"user_id": target_user_id},
-                {"$set": {"overtime_hours": new_val, "updated_at": now_iso}},
-                upsert=True,
-            )
+        # BUG-FIX (Nov 2026): NICHT mehr direkt in overtime_hours schreiben -
+        # der naechste Recompute hat den Wert sonst ueberschrieben und die
+        # abgebauten Stunden kamen kommentarlos zurueck. Der Abbau wird jetzt
+        # vom Recompute aus time_off_requests verbucht.
+    else:
+        hours_to_deduct = 0
 
     _typ_lbl_c = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req_type, req_type)
     _detail = f"({hours}h)" if hours is not None else f"({days} Tage)"
+    _ot = await _recompute_and_describe(target_user_id, start_date, end_date)
+    _ot_txt = f" – Stundenkonto {_ot}" if _ot else ""
+    if req_type == "ueberstundenabbau" and hours_to_deduct:
+        _ot_txt = f" – {hours_to_deduct:.2f}h vom Stundenkonto abgezogen" + (f" ({_ot})" if _ot else "")
     await _log_audit(
         target_user_id, "time_off_admin_create", caller,
-        after={"type": req_type, "start_date": start_date, "end_date": end_date, "days": days, "hours": hours},
-        summary=f"{_typ_lbl_c} {start_date} – {end_date} eingetragen {_detail}"
+        after={"type": req_type, "start_date": start_date, "end_date": end_date, "days": days, "hours": hours,
+               "overtime_delta_h": -round(hours_to_deduct, 2) if req_type == "ueberstundenabbau" else 0.0},
+        summary=f"{_typ_lbl_c} {start_date} – {end_date} eingetragen {_detail}{_ot_txt}"
     )
     return {k: v for k, v in entry.items() if k != "_id"}
 
@@ -3088,24 +3437,27 @@ async def admin_delete_time_off(request_id: str, token: str = Query(...)):
             hours_to_refund = float(hours_to_refund or 0)
         except (TypeError, ValueError):
             hours_to_refund = 0
-        if hours_to_refund > 0:
-            hr = await db.hr_data.find_one({"user_id": req["user_id"]}, {"_id": 0})
-            current = float(hr.get("overtime_hours", 0)) if hr else 0.0
-            new_val = round(current + hours_to_refund, 2)
-            await db.hr_data.update_one(
-                {"user_id": req["user_id"]},
-                {"$set": {"overtime_hours": new_val, "updated_at": datetime.now(timezone.utc).isoformat()}},
-                upsert=True,
-            )
+        # BUG-FIX (Nov 2026): Rueckbuchung NICHT mehr direkt in overtime_hours -
+        # der Recompute (unten) verbucht den Wegfall des Abbaus.
+    else:
+        hours_to_refund = 0
 
     await db.time_off_requests.delete_one({"id": request_id})
     _typ_lbl = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req.get("type"), req.get("type") or "Antrag")
+    _ot = ""
+    if req.get("status") == "approved":
+        _ot = await _recompute_and_describe(req.get("user_id"), req.get("start_date"), req.get("end_date"))
+    _ot_txt = f" – Stundenkonto {_ot}" if _ot else ""
+    if hours_to_refund:
+        _ot_txt = (f" – Abbau von {hours_to_refund:.2f}h storniert (vergangene Tage zählen wieder als "
+                   f"normale Arbeitstage)" + (f"; Stundenkonto {_ot}" if _ot else ""))
     await _log_audit(
         req.get("user_id"), "time_off_delete", caller,
         before={"type": req.get("type"), "status": req.get("status"),
                 "start_date": req.get("start_date"), "end_date": req.get("end_date"),
                 "days": req.get("days")},
-        summary=f"{_typ_lbl} {req.get('start_date')} – {req.get('end_date')} gelöscht"
+        after={"overtime_delta_h": round(hours_to_refund, 2)},
+        summary=f"{_typ_lbl} {req.get('start_date')} – {req.get('end_date')} gelöscht{_ot_txt}"
     )
     return {"ok": True}
 
@@ -3342,14 +3694,32 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
                     hours_to_deduct = days * 8
             else:
                 hours_to_deduct = 8
+        # BUG-FIX (Nov 2026): NICHT mehr direkt in overtime_hours schreiben
+        # (wurde beim naechsten Recompute ueberschrieben -> Stunden kamen
+        # zurueck). Recompute verbucht den Abbau aus dem genehmigten Antrag.
         year = int(req["start_date"][:4])
-        hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
-        current_overtime = float(hr.get("overtime_hours", 0)) if hr else 0
-        new_overtime = round(current_overtime - hours_to_deduct, 2)
         await db.hr_data.update_one(
             {"user_id": req["user_id"], "year": year},
-            {"$set": {"overtime_hours": new_overtime, "hours_deducted_last": hours_to_deduct}},
+            {"$set": {"hours_deducted_last": hours_to_deduct}},
             upsert=True
+        )
+
+    # Status-Aenderung eines jetzt / bisher genehmigten Antrags (Urlaub/Krank/
+    # Abbau) wirkt aufs Stundenkonto -> neu berechnen + protokollieren.
+    if status == "approved" or req.get("status") == "approved":
+        _typ = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req.get("type"), req.get("type") or "Antrag")
+        _st = {"approved": "genehmigt", "rejected": "abgelehnt", "withdrawn": "zurückgezogen"}.get(status, status)
+        _ot = await _recompute_and_describe(req["user_id"], req.get("start_date"), req.get("end_date"))
+        _extra = ""
+        if status == "approved" and req.get("type") == "ueberstundenabbau":
+            _extra = f" – {hours_to_deduct:.2f}h vom Stundenkonto abgezogen"
+        await _log_audit(
+            req["user_id"], "time_off_resolve", caller,
+            before={"status": req.get("status")},
+            after={"status": status, "type": req.get("type"),
+                   "start_date": req.get("start_date"), "end_date": req.get("end_date")},
+            summary=f"{_typ} {req.get('start_date')} – {req.get('end_date')} {_st}{_extra}"
+                    + (f" (Stundenkonto {_ot})" if _ot else ""),
         )
 
     # Mark related task as completed
@@ -4255,6 +4625,39 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
                     "status": "approved",
                     "source": "vacation_entry",  # Hinweis fuer Frontend (read-only)
                 })
+
+        # 3) Offdays aus dem Offday-Konto (Verwaltung -> Offday-Konto -> Abziehen
+        # mit Datum). Diese tauchten bisher im Einsatzplan gar nicht auf, obwohl
+        # dort ueberhaupt die meisten Offdays gebucht werden.
+        # Netto pro (User, Tag): nur wenn mehr abgezogen als gutgeschrieben wurde.
+        shift_offday_keys = {(a.get("user_id"), a.get("date")) for a in assignments if a.get("is_offday")}
+        led_pipeline = [
+            {"$match": {"kind": "manual_adjust", "ref_date": {"$gte": mon_str, "$lte": sun_str}}},
+            {"$group": {"_id": {"user_id": "$user_id", "date": "$ref_date"},
+                        "net": {"$sum": "$delta"}, "user_name": {"$last": "$user_name"},
+                        "note": {"$last": "$note"}}},
+            {"$match": {"net": {"$lt": 0}}},
+        ]
+        try:
+            for g in await db.offday_ledger.aggregate(led_pipeline).to_list(1000):
+                uid, d = g["_id"].get("user_id"), g["_id"].get("date")
+                if not uid or not d or (uid, d) in shift_offday_keys:
+                    continue
+                absences.append({
+                    "id": f"offday-ledger-{uid}-{d}",
+                    "user_id": uid,
+                    "user_name": g.get("user_name", ""),
+                    "type": "offday",
+                    "type_label": "Offday",
+                    "start_date": d,
+                    "end_date": d,
+                    "days": abs(int(g.get("net") or 0)),
+                    "note": g.get("note") or "",
+                    "status": "approved",
+                    "source": "offday_ledger",  # read-only, Aenderung im Offday-Konto
+                })
+        except Exception as _e:
+            logger.warning(f"Offday-Ledger fuer Einsatzplan konnte nicht geladen werden: {_e}")
     return {
         "assignments": assignments,
         "released": bool(release),
@@ -4364,30 +4767,19 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         # UND das Stundenkonto neu berechnet werden. force=True verhindert
         # dass die 5h-Sprung-Safety legitime Batches blockiert.
         if data.get("is_offday") and created_ids:
-            try:
-                _ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0}) or {}
-                _by_year: dict = {}
-                for _d_iso in created_dates:
-                    try:
-                        _dobj = datetime.strptime(_d_iso, "%Y-%m-%d").date()
-                        _h = _soll_minutes_from_schedule(_ws, _dobj.weekday()) / 60.0
-                        if _h > 0:
-                            _by_year[_dobj.year] = _by_year.get(_dobj.year, 0.0) + _h
-                    except (ValueError, TypeError):
-                        continue
-                for _y, _h_sum in _by_year.items():
-                    await db.hr_data.update_one(
-                        {"user_id": user_id, "year": _y},
-                        {"$inc": {"overtime_baseline": -_h_sum}},
-                        upsert=True,
-                    )
-                _years = sorted(_by_year.keys()) or sorted({int(d[:4]) for d in created_dates if d[:4].isdigit()})
-                for _y in _years:
-                    await _recompute_overtime_for_year(user_id, _y, force=True)
-                _total_h = round(sum(_by_year.values()), 2)
-            except Exception as _e:
-                logger.warning(f"Overtime-Baseline nach Multi-Offday fehlgeschlagen: {_e}")
-                _total_h = 0.0
+            # Pro Tag: Abzug nur wenn der Tag nicht ohnehin frei/gearbeitet war
+            _total_h = 0.0
+            _skipped: list = []
+            for _aid, _d_iso in zip(created_ids, created_dates):
+                try:
+                    _h, _skip = await _offday_book_overtime(user_id, _d_iso, _aid)
+                    _total_h += _h
+                    if _skip:
+                        _skipped.append(f"{_d_iso} ({_skip})")
+                except Exception as _e:
+                    logger.warning(f"Overtime-Abzug Multi-Offday fehlgeschlagen ({_d_iso}): {_e}")
+            _total_h = round(_total_h, 2)
+            _ot = await _recompute_and_describe(user_id, created_dates[0], created_dates[-1])
             # Audit-Log fuer Nachvollziehbarkeit im Aenderungsprotokoll
             try:
                 _first = created_dates[0] if created_dates else ""
@@ -4396,8 +4788,11 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                 await _log_audit(
                     user_id, "offday_create", caller,
                     after={"dates": created_dates, "count": len(created_dates),
-                           "is_offday": True, "overtime_delta_h": -_total_h},
-                    summary=f"Offday {_range} eingetragen ({len(created_dates)} Tage / -{_total_h:.2f}h Ueberstunden)",
+                           "is_offday": True, "overtime_delta_h": -_total_h,
+                           "skipped": _skipped},
+                    summary=f"Offday {_range} eingetragen ({len(created_dates)} Tage / -{_total_h:.2f}h Ueberstunden"
+                            + (f"; KEIN Abzug für {', '.join(_skipped)}" if _skipped else "")
+                            + (f"; Stundenkonto {_ot}" if _ot else "") + ")",
                 )
             except Exception as _e:
                 logger.warning(f"Audit-Log Offday-Create fehlgeschlagen: {_e}")
@@ -4447,35 +4842,31 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             # BUG-FIX (Feb 2026): Bei Offday-Flip Baseline anpassen +
             # Stundenkonto neu berechnen.
             if was_off != now_off:
-                _flip_h = 0.0
+                _sign_h = 0.0
+                _skip = None
                 try:
-                    _ws = await db.work_schedules.find_one({"user_id": eff_user_id}, {"_id": 0}) or {}
-                    _dobj = datetime.strptime(str(eff_date or ""), "%Y-%m-%d").date()
-                    _flip_h = _soll_minutes_from_schedule(_ws, _dobj.weekday()) / 60.0
-                    if _flip_h > 0:
-                        _y_ = _dobj.year
-                        _delta = -_flip_h if now_off else _flip_h
-                        await db.hr_data.update_one(
-                            {"user_id": eff_user_id, "year": _y_},
-                            {"$inc": {"overtime_baseline": _delta}},
-                            upsert=True,
-                        )
+                    if now_off:
+                        _h, _skip = await _offday_book_overtime(eff_user_id, eff_date, assignment_id)
+                        _sign_h = -_h
+                    else:
+                        _sign_h = await _offday_refund_overtime(prev)
+                        await db.shift_assignments.update_one(
+                            {"id": assignment_id},
+                            {"$unset": {"overtime_deducted_h": "", "overtime_skip_reason": ""}})
                 except Exception as _e:
                     logger.warning(f"Baseline-Adjust bei Offday-Flip fehlgeschlagen: {_e}")
-                try:
-                    _y = int(str(eff_date or "")[:4])
-                    await _recompute_overtime_for_year(eff_user_id, _y, force=True)
-                except Exception as _e:
-                    logger.warning(f"Overtime-Recompute nach Offday-Flip fehlgeschlagen: {_e}")
+                _ot = await _recompute_and_describe(eff_user_id, eff_date)
                 try:
                     _label = "Offday" if now_off else "Einsatz"
                     _prev_label = "Offday" if was_off else "Einsatz"
-                    _sign_h = -_flip_h if now_off else _flip_h
                     await _log_audit(
                         eff_user_id, "offday_update", caller,
                         before={"date": eff_date, "is_offday": was_off},
-                        after={"date": eff_date, "is_offday": now_off, "overtime_delta_h": _sign_h},
-                        summary=f"{eff_date}: {_prev_label} -> {_label} ({_sign_h:+.2f}h Ueberstunden)",
+                        after={"date": eff_date, "is_offday": now_off, "overtime_delta_h": _sign_h,
+                               "skip_overtime_reason": _skip},
+                        summary=f"{eff_date}: {_prev_label} -> {_label} ({_sign_h:+.2f}h Ueberstunden"
+                                + (f", KEIN Abzug: {_skip}" if _skip else "")
+                                + (f"; Stundenkonto {_ot}" if _ot else "") + ")",
                     )
                 except Exception as _e:
                     logger.warning(f"Audit-Log Offday-Update fehlgeschlagen: {_e}")
@@ -4514,33 +4905,24 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                 )
             except Exception as _e:
                 logger.warning(f"Offday consume fehlgeschlagen: {_e}")
-            # Baseline um Tages-Soll reduzieren (Offday konsumiert Ueberstunden)
-            _single_h = 0.0
+            # Ueberstunden-Abzug (Tages-Soll) einmalig auf die Baseline - ausser
+            # der Tag war ohnehin frei (Urlaub/Krank/Abbau) oder gearbeitet.
+            _single_h, _skip = 0.0, None
             try:
-                _ws = await db.work_schedules.find_one({"user_id": data.get("user_id")}, {"_id": 0}) or {}
-                _dobj = datetime.strptime(str(data.get("date") or ""), "%Y-%m-%d").date()
-                _single_h = _soll_minutes_from_schedule(_ws, _dobj.weekday()) / 60.0
-                if _single_h > 0:
-                    y = _dobj.year
-                    await db.hr_data.update_one(
-                        {"user_id": data.get("user_id"), "year": y},
-                        {"$inc": {"overtime_baseline": -_single_h}},
-                        upsert=True,
-                    )
+                _single_h, _skip = await _offday_book_overtime(data.get("user_id"), data.get("date"), assignment_id)
             except Exception as _e:
                 logger.warning(f"Baseline-Adjust Offday-Single-Day fehlgeschlagen: {_e}")
             # Stundenkonto neu rechnen mit force=True (legitimate Mutation)
-            try:
-                y = int(str(data.get("date") or "")[:4])
-                await _recompute_overtime_for_year(data.get("user_id"), y, force=True)
-            except Exception as _e:
-                logger.warning(f"Overtime-Recompute nach Offday fehlgeschlagen: {_e}")
+            _ot = await _recompute_and_describe(data.get("user_id"), data.get("date"))
             # Audit-Log: sichtbar im Aenderungsprotokoll
             try:
                 await _log_audit(
                     data.get("user_id"), "offday_create", caller,
-                    after={"date": data.get("date"), "is_offday": True, "overtime_delta_h": -_single_h},
-                    summary=f"Offday {data.get('date')} eingetragen (-{_single_h:.2f}h Ueberstunden)",
+                    after={"date": data.get("date"), "is_offday": True, "overtime_delta_h": -_single_h,
+                           "skip_overtime_reason": _skip},
+                    summary=f"Offday {data.get('date')} eingetragen (-{_single_h:.2f}h Ueberstunden"
+                            + (f", KEIN Abzug: {_skip}" if _skip else "")
+                            + (f"; Stundenkonto {_ot}" if _ot else "") + ")",
                 )
             except Exception as _e:
                 logger.warning(f"Audit-Log Offday-Create fehlgeschlagen: {_e}")
@@ -4565,42 +4947,25 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
             await release_offday_for_assignment(assignment_id)
         except Exception as _e:
             logger.warning(f"Offday release fehlgeschlagen: {_e}")
-        # Offday-Konsum rueckgaengig: Baseline um die zuvor abgezogenen Sollstunden
-        # anheben, damit der nachfolgende Recompute (der den Tag jetzt als
-        # 'versaeumten Arbeitstag' behandelt und -soll rechnet) sich netto zu 0
-        # ausgleicht. So bleibt der Mitarbeiter beim Storno nicht auf -soll sitzen.
+        # Offday-Konsum rueckgaengig: genau den damals abgezogenen Betrag zurueck
+        # (nur wenn er nicht schon durch eine spaetere manuelle Setzung
+        # ueberschrieben wurde). Der Tag zaehlt danach wieder als normaler
+        # Arbeitstag (ohne Stempel = -Soll), netto also 0.
+        _hours_refund = 0.0
         try:
-            uid = prev.get("user_id")
-            off_date = prev.get("date") or ""
-            y = int(off_date[:4]) if off_date[:4].isdigit() else None
-            if uid and off_date and y:
-                _ws = await db.work_schedules.find_one({"user_id": uid}, {"_id": 0})
-                _d_obj = datetime.strptime(off_date, "%Y-%m-%d").date()
-                _mins = _soll_minutes_from_schedule(_ws or {}, _d_obj.weekday())
-                _hours_refund = _mins / 60.0
-                if _hours_refund > 0:
-                    await db.hr_data.update_one(
-                        {"user_id": uid, "year": y},
-                        {"$inc": {"overtime_baseline": _hours_refund}},
-                        upsert=False,
-                    )
-                    logger.info(
-                        f"Offday-Storno: {_hours_refund:.2f}h auf Baseline zurueckgegeben "
-                        f"(user={uid}, date={off_date})"
-                    )
+            _hours_refund = await _offday_refund_overtime(prev)
         except Exception as _e:
             logger.warning(f"Offday-Rueckerstattung fehlgeschlagen: {_e}")
-        try:
-            y = int(str(prev.get("date") or "")[:4])
-            await _recompute_overtime_for_year(prev.get("user_id"), y, force=True)
-        except Exception as _e:
-            logger.warning(f"Overtime-Recompute nach Offday-Delete fehlgeschlagen: {_e}")
+        _ot = await _recompute_and_describe(prev.get("user_id"), prev.get("date"))
         # Audit-Log
         try:
             await _log_audit(
                 prev.get("user_id"), "offday_delete", caller,
                 before={"date": prev.get("date"), "is_offday": True},
-                summary=f"Offday {prev.get('date')} geloescht",
+                after={"overtime_delta_h": _hours_refund},
+                summary=f"Offday {prev.get('date')} geloescht ({_hours_refund:+.2f}h Ueberstunden zurückgebucht"
+                        + ("; Tag zählt wieder als normaler Arbeitstag" if _hours_refund else "")
+                        + (f"; Stundenkonto {_ot}" if _ot else "") + ")",
             )
         except Exception as _e:
             logger.warning(f"Audit-Log Offday-Delete fehlgeschlagen: {_e}")

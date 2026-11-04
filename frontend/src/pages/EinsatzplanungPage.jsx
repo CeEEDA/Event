@@ -200,6 +200,20 @@ export default function EinsatzplanungPage() {
   useEffect(() => { fetchSyncStatus(); }, [fetchSyncStatus]);
   useEffect(() => { loadUsers(); }, [loadUsers]);
   useEffect(() => { loadPlan(); loadOrders(); loadJobReqs(); loadOffdayBalances(); }, [loadPlan, loadOrders, loadJobReqs, loadOffdayBalances]);
+  // Sync mit Aenderungen aus anderen Bereichen (Urlaub/Krank/Abbau genehmigt,
+  // Offday im Offday-Konto gebucht ...): beim Zurueckkehren in den Tab und
+  // jede Minute Plan + Abwesenheiten + Offday-Salden neu laden.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") { loadPlan(); loadOffdayBalances(); } };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const iv = setInterval(refresh, 60000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      clearInterval(iv);
+    };
+  }, [loadPlan, loadOffdayBalances]);
   useEffect(() => { if (users.length > 0) loadSchedules(); }, [users, loadSchedules]);
   useEffect(() => { if (orders.length > 0) loadCrewData(); }, [orders, loadCrewData]);
 
@@ -251,6 +265,7 @@ export default function EinsatzplanungPage() {
     if (type === "urlaub") return { text: "Urlaub", icon: Palmtree, cls: "bg-blue-100 text-blue-700" };
     if (type === "krank") return { text: "Krank", icon: ThermometerSun, cls: "bg-red-100 text-red-700" };
     if (type === "ueberstundenabbau") return { text: "ÜS-Abbau", icon: TrendingUp, cls: "bg-amber-100 text-amber-700" };
+    if (type === "offday") return { text: "Offday (Konto)", icon: CalendarCheck2, cls: "bg-violet-100 text-violet-700" };
     return { text: type, icon: CalendarDays, cls: "bg-gray-100 text-gray-700" };
   };
 

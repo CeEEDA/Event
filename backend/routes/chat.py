@@ -735,15 +735,25 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
                         hours_to_deduct = days * 8
                 else:
                     hours_to_deduct = 8
-                year = int(req["start_date"][:4])
-                hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
-                current_overtime = hr.get("overtime_hours", 0) if hr else 0
-                new_overtime = current_overtime - hours_to_deduct
-                await db.hr_data.update_one(
-                    {"user_id": req["user_id"], "year": year},
-                    {"$set": {"overtime_hours": new_overtime}},
-                    upsert=True
+            # BUG-FIX (Nov 2026): NICHT mehr direkt in overtime_hours schreiben -
+            # der naechste Recompute hat den Wert ueberschrieben und abgebaute
+            # Stunden kamen zurueck. Der Recompute verbucht Urlaub/Krank/Abbau
+            # aus dem jetzt genehmigten Antrag; Protokoll-Eintrag dazu.
+            try:
+                from routes.employee import _recompute_and_describe, _log_audit
+                _ot = await _recompute_and_describe(req["user_id"], req.get("start_date"), req.get("end_date"))
+                _typ = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req.get("type"), req.get("type") or "Antrag")
+                _extra = f" – {hours_to_deduct:.2f}h vom Stundenkonto abgezogen" if req.get("type") == "ueberstundenabbau" else ""
+                await _log_audit(
+                    req["user_id"], "time_off_resolve", user,
+                    before={"status": "pending"},
+                    after={"status": "approved", "type": req.get("type"),
+                           "start_date": req.get("start_date"), "end_date": req.get("end_date")},
+                    summary=f"{_typ} {req.get('start_date')} – {req.get('end_date')} genehmigt (über Aufgabe){_extra}"
+                            + (f" (Stundenkonto {_ot})" if _ot else ""),
                 )
+            except Exception as _e:
+                logging.getLogger(__name__).warning(f"Recompute nach Antrag-Genehmigung (Aufgabe) fehlgeschlagen: {_e}")
 
     return task
 
