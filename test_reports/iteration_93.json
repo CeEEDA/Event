@@ -1,0 +1,25 @@
+{
+  "summary": "Bug-fix verification for the Messe audio feature (the announcement button had disappeared). Backend: 4 of 4 pytest tests pass. A default upload is permanent (temporary=false, expires_at=null). An upload with temporary=1 and keep_minutes=15 is temporary and expires about 15 minutes later. A fair with no audio returns an empty audio list publicly. /api/mbox/devices returns 200. Frontend: as admin, I created a new fair. In record mode the 'Gast-Aufnahme' checkbox (messe-audio-gast) is unchecked by default and the minutes dropdown is disabled. I uploaded testansage.mp3 in file mode. It reached status 'bereit' with no Gast badge (0 messe-audio-temp-* elements), and the API reports temporary=false and expires_at=null. On mobile at 390px without login, a fair with no audio still shows messe-public-durchsage-btn ('Eigene aufnehmen · 1 Gerät(e)'). Clicking it opens /durchsage, which shows messe-durchsage-empty and an enabled messe-durchsage-record-btn, with no redirect to /login. The fair with the uploaded file shows '1 Datei(en) · 1 Gerät(e)' and lists messe-durchsage-file-<fid>. The preview button (messe-durchsage-preview-<fid>) is visible, and clicking it switched the icon to pause, so playback appears to have started. Clicking messe-item-<id> opens messe-detail.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MessePublicPage overview (390px)", "issues": ["Durchsage button: at 390px the subtitle 'Eigene aufnehmen · 1 Gerät(e)' wraps onto two lines and squeezes the round megaphone icon into an oval. Suggested fix: add shrink-0 to the icon span and whitespace-nowrap or a shorter text to the subtitle."]},
+      {"screen": "MesseDetail (admin)", "issues": ["The Von/Bis fields use the browser's native date picker (input type=date, mm/dd/yyyy) instead of the shadcn calendar. This is not a regression."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_messe_audio_persist_iter93.py", "/app/test_reports/pytest/pytest_iter93.xml"],
+  "action_items": ["Optional: fix the squeezed megaphone icon / wrapping subtitle on the public Durchsage button at 390px"],
+  "critical_code_review_comments": [
+    "In the admin upload, send() always sends keep_minutes=15, which is harmless because the backend ignores it when temporary is empty. With the default now off, the fix is correct.",
+    "cleanup_expired_audio is called on every public GET /api/messe/public/{token}, plus the 60s loop. That works, but it is a DB query on every public page load.",
+    "Admin recordings with temporary=true have no session_id, so all public visitors see them until they expire. This is intended."
+  ],
+  "updated_files": ["/app/backend/tests/test_messe_audio_persist_iter93.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created test fairs TEST_Messe Iter93, TEST_Messe Iter93 leer, TEST_UI Messe Audio Iter93 (82326229...) and TEST_UI Messe Leer Iter93 (a2776a38...). All were archived via DELETE (soft-delete). Existing fairs were not changed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Admin login: put the token into localStorage 'token' (obtained via POST /api/auth/login). Public pages: /messe/{token}?s=1. MBOX-TEST-1 has id ee277308-711d-48c2-acfd-3ac9d20ff8be. Pi/SPS offline in preview is expected."
+}
