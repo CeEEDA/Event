@@ -12,7 +12,7 @@ import uuid
 import logging
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Depends, Request
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
@@ -21,7 +21,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+# Inventar ist fest an EIN Login gebunden - auch andere Admins sehen es nicht.
+INVENTORY_OWNER_EMAIL = (os.environ.get("INVENTORY_OWNER_EMAIL") or "christian.ecker@eventenergie-deutschland.de").strip().lower()
+
+
+async def require_inventory_owner(request: Request, token: Optional[str] = Query(None)):
+    """Bearer-Token (API) oder ?token= (Bild-/Dokument-Links) - nur der Inhaber kommt durch."""
+    from server import decode_jwt_token
+    auth = request.headers.get("Authorization", "")
+    t = auth[7:].strip() if auth.lower().startswith("bearer ") else token
+    if not t:
+        raise HTTPException(status_code=401, detail="Nicht angemeldet")
+    try:
+        payload = decode_jwt_token(t)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Ungueltiges Token")
+    user = await db.users.find_one({"id": payload.get("user_id")}, {"_id": 0, "email": 1, "active": 1})
+    if not user or (user.get("email") or "").strip().lower() != INVENTORY_OWNER_EMAIL:
+        raise HTTPException(status_code=403, detail="Das Inventar ist nur fuer den Inhaber freigegeben")
+    return user
+
+
+router = APIRouter(prefix="/api/inventory", tags=["inventory"], dependencies=[Depends(require_inventory_owner)])
 
 MONGO_URL = os.environ.get("MONGO_URL")
 DB_NAME = os.environ.get("DB_NAME")

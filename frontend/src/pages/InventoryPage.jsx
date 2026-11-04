@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -35,8 +36,17 @@ const JAHRE = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
 
 const fmtEUR = (v) => (v == null ? "-" : new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(v));
 
+const INVENTORY_OWNER = "christian.ecker@eventenergie-deutschland.de";
+
 export default function InventoryPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user && (user.email || "").trim().toLowerCase() !== INVENTORY_OWNER) {
+      toast.error("Das Inventar ist nur für den Inhaber freigegeben");
+      navigate("/verwaltung", { replace: true });
+    }
+  }, [user, navigate]);
   const [items, setItems] = useState([]);
   const [groups, setGroups] = useState([]);
   const [q, setQ] = useState("");
@@ -741,7 +751,7 @@ function ItemRow({ item, onEdit, onDelete }) {
       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-md bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-gray-200">
         {firstImg ? (
           <img
-            src={`${API}/api/inventory/items/${item.id}/images/${firstImg.id}?thumb=128`}
+            src={`${API}/api/inventory/items/${item.id}/images/${firstImg.id}?thumb=128&token=${localStorage.getItem("token") || ""}`}
             alt=""
             width={48}
             height={48}
@@ -1134,7 +1144,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                 {images.map(img => (
                   <div key={img.id} className="relative aspect-square rounded-md border border-gray-200 overflow-hidden bg-gray-100">
                     <img
-                      src={`${API}/api/inventory/items/${createdItemId}/images/${img.id}?thumb=256`}
+                      src={`${API}/api/inventory/items/${createdItemId}/images/${img.id}?thumb=256&token=${localStorage.getItem("token") || ""}`}
                       alt=""
                       className="w-full h-full object-cover"
                     />
@@ -1229,7 +1239,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                       <div className="text-[10px] text-gray-400">{fmtBytes(d.size)}</div>
                     </div>
                     <a
-                      href={`${API}/api/inventory/items/${createdItemId}/documents/${d.id}`}
+                      href={`${API}/api/inventory/items/${createdItemId}/documents/${d.id}?token=${localStorage.getItem("token") || ""}`}
                       target="_blank"
                       rel="noreferrer"
                       className="p-1.5 rounded text-gray-500 hover:bg-blue-50 hover:text-blue-600"

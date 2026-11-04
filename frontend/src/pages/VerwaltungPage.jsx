@@ -75,10 +75,12 @@ export default function VerwaltungPage() {
       icon: Package,
       color: "fuchsia",
       path: "/verwaltung/inventar",
+      ownerOnly: "christian.ecker@eventenergie-deutschland.de",
     },
   ];
 
   const items = allItems.filter(item => {
+    if (item.ownerOnly) return (user?.email || "").trim().toLowerCase() === item.ownerOnly;
     if (item.adminOnly) return isAdmin;
     if (item.requiredApp) return isAdmin || user?.apps?.[item.requiredApp]?.enabled;
     if (item.requiresBilling) return isAdmin || !!user?.permissions?.can_billing;
