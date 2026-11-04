@@ -127,7 +127,7 @@ export default function MesseDurchsagePage() {
 
         <section className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm" data-testid="messe-durchsage-audio">
           <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3 flex items-center gap-2"><Volume2 className="w-4 h-4 text-fuchsia-500" /> Was abspielen?</h3>
-          {messe.audio.length === 0 && <p className="text-sm text-gray-400">Keine Durchsage hinterlegt.</p>}
+          {messe.audio.length === 0 && <p className="text-sm text-gray-400" data-testid="messe-durchsage-empty">Noch keine Durchsage hinterlegt – unten eine eigene aufnehmen.</p>}
           <div className="space-y-2">
             {messe.audio.map(f => {
               const on = f.id === fid;

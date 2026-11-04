@@ -24,15 +24,13 @@ export default function MessePublicPage() {
     return (
       <Shell messe={messe} session={session}>
         <div className="space-y-3 mb-6">
-          {messe.audio.length > 0 && (
-            <button onClick={() => navigate(`/messe/${token}/durchsage`)} data-testid="messe-public-durchsage-btn"
-              className="w-full h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center gap-3 px-5 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] transition">
-              <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><Megaphone className="w-5 h-5" /></span>
-              <span className="flex-1 text-left">Durchsage</span>
-              <span className="text-xs font-normal opacity-80">{messe.audio.length} Datei(en) · {messe.devices.length} Gerät(e)</span>
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          )}
+          <button onClick={() => navigate(`/messe/${token}/durchsage`)} data-testid="messe-public-durchsage-btn"
+            className="w-full h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center gap-3 px-5 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] transition">
+            <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><Megaphone className="w-5 h-5" /></span>
+            <span className="flex-1 text-left">Durchsage</span>
+            <span className="text-xs font-normal opacity-80">{messe.audio.length > 0 ? `${messe.audio.length} Datei(en) · ` : "Eigene aufnehmen · "}{messe.devices.length} Gerät(e)</span>
+            <ChevronRight className="w-5 h-5" />
+          </button>
           <button onClick={() => navigate(`/messe/${token}/beleuchtung`)} data-testid="messe-public-beleuchtung-btn"
             className="w-full h-16 rounded-2xl bg-gray-900 text-white font-bold text-lg flex items-center gap-3 px-5 shadow-lg active:scale-[0.98] transition">
             <span className="w-10 h-10 rounded-full bg-amber-400/20 flex items-center justify-center"><Lightbulb className="w-5 h-5 text-amber-300" /></span>
