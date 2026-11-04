@@ -113,7 +113,10 @@ def _spectral_gate(src_wav: Path, dst_wav: Path, profile: Optional[Path]) -> dic
         tail = y[max(0, start - len(pre)):start]
         pre[len(pre) - len(tail):] = tail
         y = y[start:end].copy()
-        y[:fade] *= np.linspace(0.0, 1.0, fade, dtype=y.dtype)
+        # Vorlauf nicht linear, sondern mit steiler Kurve einblenden: direkt vor dem Wort fast voll (Anlaute bleiben),
+        # 0,2 s davor schon -35 dB -> aufgepumptes Mikro-Rauschen (Handy-AGC) vor dem ersten Wort ist weg
+        ramp = min(len(y), onset2 - start) if onset2 > start else fade
+        y[:ramp] *= np.power(np.linspace(0.0, 1.0, ramp, dtype=y.dtype), 2.5)
         y[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=y.dtype)
     y = np.clip(np.concatenate([pre, y]), -1.0, 1.0)
     sf.write(str(dst_wav), y, sr, subtype="PCM_16")
