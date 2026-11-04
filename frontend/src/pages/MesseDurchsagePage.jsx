@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Radio, Volume2, Square, Megaphone, Play, Mic, Clock } from "lucide-react";
-import { Shell, Hinweis, PUBLIC_BASE as base, errText, useMesseSession, withSession } from "../components/messe/MessePublicShell";
+import { ArrowLeft, Check, Radio, Volume2, Square, Megaphone, Play, Mic, Clock, Headphones, Pause } from "lucide-react";
+import { Shell, Hinweis, PUBLIC_BASE as base, errText, useMesseSession, withSession, sessionId } from "../components/messe/MessePublicShell";
 import { AudioRecorder } from "../components/mbox/AudioRecorder";
 
 export default function MesseDurchsagePage() {
@@ -19,7 +19,17 @@ export default function MesseDurchsagePage() {
   const [rest, setRest] = useState(null);
   const [aufnahme, setAufnahme] = useState(false);
   const [recBusy, setRecBusy] = useState(false);
+  const [preview, setPreview] = useState(null); // fid, das gerade vorgehoert wird
+  const player = useRef(null);
   const tick = useRef(null);
+
+  const vorhoeren = (f) => {
+    const el = player.current;
+    if (!el) return;
+    if (preview === f.id) { el.pause(); el.currentTime = 0; setPreview(null); return; }
+    el.src = `${base}/${token}/audio/${f.id}/stream?s=${encodeURIComponent(sessionId(token))}`;
+    el.play().then(() => setPreview(f.id)).catch(() => toast.error("Vorhören nicht möglich"));
+  };
 
   const load = useCallback(async (first = false) => {
     try {
@@ -122,18 +132,24 @@ export default function MesseDurchsagePage() {
               const on = f.id === fid;
               const wip = f.status === "processing";
               return (
-                <button key={f.id} type="button" disabled={wip} onClick={() => setFid(f.id)} data-testid={`messe-durchsage-file-${f.id}`}
-                  className={`w-full min-h-12 py-2 rounded-xl border-2 flex items-center gap-3 px-3 text-left transition disabled:opacity-60 ${on ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-200 bg-white"}`}>
-                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${on ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300"}`}>{on && <Check className="w-3 h-3" />}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block truncate font-medium text-gray-900">{f.name}</span>
-                    {f.own && <span className="text-[11px] text-amber-700 flex items-center gap-1"><Clock className="w-3 h-3" /> {wip ? "wird optimiert …" : `Ihre Aufnahme · bis ${new Date(f.expires_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`}</span>}
-                  </span>
-                  {f.duration_sec && <span className="text-xs text-gray-400">{Math.round(f.duration_sec)} s</span>}
-                </button>
+                <div key={f.id} className={`w-full min-h-12 rounded-xl border-2 flex items-center gap-2 pl-3 pr-1 transition ${wip ? "opacity-60" : ""} ${on ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-200 bg-white"}`} data-testid={`messe-durchsage-file-${f.id}`}>
+                  <button type="button" disabled={wip} onClick={() => setFid(f.id)} className="flex-1 min-w-0 flex items-center gap-3 py-2 text-left" data-testid={`messe-durchsage-select-${f.id}`}>
+                    <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${on ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300"}`}>{on && <Check className="w-3 h-3" />}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block truncate font-medium text-gray-900">{f.name}</span>
+                      {f.own && <span className="text-[11px] text-amber-700 flex items-center gap-1"><Clock className="w-3 h-3" /> {wip ? "wird optimiert …" : `Ihre Aufnahme · bis ${new Date(f.expires_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`}</span>}
+                    </span>
+                    {f.duration_sec && <span className="text-xs text-gray-400">{Math.round(f.duration_sec)} s</span>}
+                  </button>
+                  <button type="button" disabled={wip || session.locked} onClick={() => vorhoeren(f)} title="Vorhören (nur auf diesem Handy)" data-testid={`messe-durchsage-preview-${f.id}`}
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition disabled:opacity-40 ${preview === f.id ? "bg-fuchsia-600 text-white" : "bg-gray-100 text-gray-600"}`}>
+                    {preview === f.id ? <Pause className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
+                  </button>
+                </div>
               );
             })}
           </div>
+          <audio ref={player} onEnded={() => setPreview(null)} onPause={() => setPreview(null)} className="hidden" data-testid="messe-durchsage-player" />
           <div className="mt-3 pt-3 border-t border-gray-100">
             {!aufnahme ? (
               <button type="button" disabled={session.locked} onClick={() => setAufnahme(true)} data-testid="messe-durchsage-record-btn"

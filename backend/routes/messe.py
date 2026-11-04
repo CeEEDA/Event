@@ -401,6 +401,22 @@ async def public_record(token: str, request: Request, file: UploadFile = File(..
     return {"id": doc["id"], "name": doc["name"], "status": doc["status"], "temporary": True, "own": True, "expires_at": doc["expires_at"]}
 
 
+@router.get("/public/{token}/audio/{fid}/stream")
+async def public_audio_stream(token: str, fid: str, s: str = Query("")):
+    """Vorhoeren im Handy-Browser (Sitzung als Query, da <audio> keine Header sendet)."""
+    m = await _messe_by_token(token)
+    sess = await db.messe_sessions.find_one({"id": s, "messe_id": m["id"]}, {"_id": 0}) if s else None
+    if not sess or sess["expires_at"] < _now():
+        raise HTTPException(status_code=403, detail="Sitzung abgelaufen - bitte QR-Code am Stand erneut scannen")
+    f = await db.messe_audio.find_one({"id": fid, "messe_id": m["id"], "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
+    if not f or not _visible_to(f, s):
+        raise HTTPException(status_code=404, detail="Durchsage nicht gefunden")
+    data = await mbox_audio.load_bytes(f["stored"])
+    if data is None:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return Response(content=data, media_type="audio/mpeg", headers={"Content-Disposition": f'inline; filename="{f["name"]}.mp3"', "Accept-Ranges": "bytes"})
+
+
 @router.get("/public/{token}/audio/{fid}")
 async def public_audio_status(token: str, fid: str, request: Request):
     m = await _messe_by_token(token)
