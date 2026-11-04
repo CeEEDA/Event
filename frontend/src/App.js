@@ -30,6 +30,7 @@ import MessePage from "./pages/MessePage";
 import MessePublicPage from "./pages/MessePublicPage";
 import MesseDurchsagePage from "./pages/MesseDurchsagePage";
 import MesseBeleuchtungPage from "./pages/MesseBeleuchtungPage";
+import MesseKontaktPage from "./pages/MesseKontaktPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -270,6 +271,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route path="/messe/kontakt/:token" element={<MesseKontaktPage />} />
       <Route path="/messe/:token" element={<MessePublicPage />} />
       <Route path="/messe/:token/durchsage" element={<MesseDurchsagePage />} />
       <Route path="/messe/:token/beleuchtung" element={<MesseBeleuchtungPage />} />

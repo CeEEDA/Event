@@ -9,6 +9,7 @@ import { Karte } from "../mbox/MBoxUi";
 import { useConfirm } from "../mbox/MBoxUi";
 import { MesseAudio } from "./MesseAudio";
 import { MesseQr } from "./MesseQr";
+import { MesseTeam } from "./MesseTeam";
 
 export function MesseDetail({ messeId, onBack }) {
   const [m, setM] = useState(null);
@@ -136,6 +137,7 @@ export function MesseDetail({ messeId, onBack }) {
 
         <MesseAudio messeId={messeId} audio={m.audio} onChange={load} />
         <MesseQr messe={m} />
+        <MesseTeam messe={m} onChange={load} />
       </main>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { HubMesseKontakt } from "../components/messe/HubMesseKontakt";
 import api, { BACKEND_URL } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -454,6 +455,9 @@ export default function HubPage() {
           <div className="flex items-center justify-between mb-5">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
           </div>
+
+          {/* Messe-Team: QR mit Kontaktkarte waehrend einer laufenden Messe */}
+          {!isCustomer && <HubMesseKontakt />}
 
           {/* Time Clock Section */}
           {!isCustomer && (

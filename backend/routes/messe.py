@@ -26,6 +26,8 @@ db = None
 
 PUBLIC_RATE_PER_MIN = 40
 PUBLIC_USER = {"id": "messe-besucher", "name": "Messe-Besucher", "role": "public"}
+STAFF_ROLES = ["admin", "mitarbeiter"]
+COMPANY = {"name": "Eventenergie Deutschland GmbH & Co. KG", "web": "https://eventenergie.app"}
 LAMP_VARS = ["DB_HMI.Status.Lampe", "DB_Parameter.Lampen_Auswahl", "DB_HMI.Status.Licht_Ein", "DB_HMI.Status.Versorgung",
              "DB_HMI.Status.Lampen_Alle_An", "DB_HMI.Status.Lampen_Alle_Aus", "DB_HMI.Status.Gen_Zustand"]
 _rate: dict = defaultdict(deque)
@@ -175,6 +177,82 @@ async def create_messe(body: dict, user: dict = Depends(get_user)):
     return {**m, "devices": [], "audio_count": 0}
 
 
+# ===================== Messe-Team: Mitarbeiter, Hub-QR, Kontaktkarte =====================
+
+def _staff_brief(u: dict) -> dict:
+    return {"id": u["id"], "name": u.get("name"), "role": u.get("role"), "email": u.get("email")}
+
+
+@router.get("/staff-options")
+async def staff_options(user: dict = Depends(get_user)):
+    """Aktive Mitarbeiter/Admins zur Auswahl als Messe-Team."""
+    _staff(user)
+    rows = await db.users.find({"role": {"$in": STAFF_ROLES}, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "role": 1, "email": 1}).to_list(300)
+    return sorted((_staff_brief(u) for u in rows), key=lambda x: (x["name"] or "").lower())
+
+
+@router.get("/my-active")
+async def my_active_messen(user: dict = Depends(get_user)):
+    """Messen, bei denen der Aufrufer im Team ist und die heute laufen -> Hub zeigt QR mit Kontaktkarte."""
+    _staff(user)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    rows = await db.messen.find({"deleted_at": None, "active": True, "staff_ids": user["id"],
+                                 "$or": [{"start_date": None}, {"start_date": {"$lte": today}}],
+                                 "$and": [{"$or": [{"end_date": None}, {"end_date": {"$gte": today}}]}]}, {"_id": 0}).to_list(20)
+    return [{"id": m["id"], "name": m["name"], "location": m.get("location"), "start_date": m.get("start_date"), "end_date": m.get("end_date"),
+             "contact_token": (m.get("staff_tokens") or {}).get(user["id"])} for m in rows if (m.get("staff_tokens") or {}).get(user["id"])]
+
+
+async def _contact_by_token(token: str) -> tuple:
+    m = None
+    async for cand in db.messen.find({"deleted_at": None, "active": True, "staff_tokens": {"$exists": True}}, {"_id": 0}):
+        for uid, t in (cand.get("staff_tokens") or {}).items():
+            if t == token and uid in (cand.get("staff_ids") or []):
+                m = cand
+                break
+        if m:
+            break
+    if not m:
+        raise HTTPException(status_code=404, detail="Kontaktkarte nicht gefunden")
+    uid = next(k for k, v in m["staff_tokens"].items() if v == token)
+    u = await db.users.find_one({"id": uid, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1})
+    if not u:
+        raise HTTPException(status_code=404, detail="Kontaktkarte nicht gefunden")
+    p = await db.employee_profiles.find_one({"user_id": uid}, {"_id": 0}) or {}
+    return m, u, p
+
+
+def _contact_payload(m: dict, u: dict, p: dict) -> dict:
+    return {"name": u.get("name"), "email": u.get("email"), "phone": p.get("phone") or "", "position": p.get("position") or "",
+            "company": COMPANY["name"], "web": COMPANY["web"], "avatar": bool(p.get("avatar_path")), "user_id": u["id"],
+            "messe": {"name": m["name"], "location": m.get("location"), "start_date": m.get("start_date"), "end_date": m.get("end_date")}}
+
+
+@router.get("/kontakt/{token}")
+async def public_contact(token: str):
+    m, u, p = await _contact_by_token(token)
+    return _contact_payload(m, u, p)
+
+
+@router.get("/kontakt/{token}/vcard")
+async def public_contact_vcard(token: str):
+    m, u, p = await _contact_by_token(token)
+    c = _contact_payload(m, u, p)
+    parts = (c["name"] or "").split(" ", 1)
+    last, first = (parts[1], parts[0]) if len(parts) == 2 else (parts[0], "")
+    lines = ["BEGIN:VCARD", "VERSION:3.0", f"N:{last};{first};;;", f"FN:{c['name']}", f"ORG:{c['company']}"]
+    if c["position"]:
+        lines.append(f"TITLE:{c['position']}")
+    if c["phone"]:
+        lines.append(f"TEL;TYPE=CELL,VOICE:{c['phone']}")
+    if c["email"]:
+        lines.append(f"EMAIL;TYPE=INTERNET,WORK:{c['email']}")
+    lines += [f"URL:{c['web']}", f"NOTE:Kennengelernt auf {m['name']}", "END:VCARD"]
+    fname = (c["name"] or "kontakt").replace(" ", "_")
+    return Response(content="\r\n".join(lines) + "\r\n", media_type="text/vcard; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}.vcf"'})
+
+
 @router.get("/{messe_id}")
 async def get_messe(messe_id: str, user: dict = Depends(get_user)):
     _staff(user)
@@ -200,6 +278,13 @@ async def update_messe(messe_id: str, body: dict, user: dict = Depends(get_user)
         found = await db.devices.find({"id": {"$in": ids}, "device_type": "mbox"}, {"_id": 0, "id": 1}).to_list(500)
         ok = {d["id"] for d in found}
         upd["device_ids"] = [i for i in ids if i in ok]
+    if "staff_ids" in body:
+        ids = [str(x) for x in (body.get("staff_ids") or [])]
+        found = await db.users.find({"id": {"$in": ids}, "role": {"$in": STAFF_ROLES}, "is_active": True}, {"_id": 0, "id": 1}).to_list(500)
+        ok = {u["id"] for u in found}
+        upd["staff_ids"] = [i for i in ids if i in ok]
+        cur = (await _messe(messe_id)).get("staff_tokens") or {}
+        upd["staff_tokens"] = {uid: cur.get(uid) or secrets.token_urlsafe(16) for uid in upd["staff_ids"]}
     if upd.get("name") == "":
         raise HTTPException(status_code=400, detail="Name darf nicht leer sein")
     await db.messen.update_one({"id": messe_id}, {"$set": upd})
