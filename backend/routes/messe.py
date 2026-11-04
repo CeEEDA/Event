@@ -95,6 +95,29 @@ def _rate_public(request: Request, device_id: str):
     q.append(now)
 
 
+SESSION_MINUTES = 5
+
+
+async def create_session(m: dict, request: Request) -> dict:
+    now = datetime.now(timezone.utc)
+    doc = {"id": secrets.token_urlsafe(24), "messe_id": m["id"], "created_at": now.isoformat(),
+           "expires_at": (now + timedelta(minutes=SESSION_MINUTES)).isoformat(),
+           "ip": request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip(),
+           "user_agent": (request.headers.get("user-agent") or "")[:200]}
+    await db.messe_sessions.insert_one(dict(doc))
+    return {"session_id": doc["id"], "expires_at": doc["expires_at"], "server_time": now.isoformat(), "minutes": SESSION_MINUTES}
+
+
+async def _require_session(request: Request, m: dict):
+    """Bedienung nur mit gueltiger Besucher-Sitzung (5 min nach dem QR-Scan)."""
+    sid = request.headers.get("x-messe-session") or ""
+    sess = await db.messe_sessions.find_one({"id": sid, "messe_id": m["id"]}, {"_id": 0}) if sid else None
+    if not sess:
+        raise HTTPException(status_code=403, detail="Keine gueltige Sitzung - bitte QR-Code am Stand scannen")
+    if sess["expires_at"] < datetime.now(timezone.utc).isoformat():
+        raise HTTPException(status_code=403, detail="Sitzung abgelaufen - bitte QR-Code am Stand erneut scannen")
+
+
 async def _active_messe_ids_for_device(device_id: str) -> list:
     rows = await db.messen.find({"device_ids": device_id, "deleted_at": None, "active": {"$ne": False}}, {"_id": 0, "id": 1}).to_list(50)
     return [r["id"] for r in rows]
@@ -299,13 +322,20 @@ async def stream_messe_audio(messe_id: str, fid: str, token: str = Query(...)):
 
 # ===================== Oeffentlich (QR-Code, ohne Login) =====================
 
+@router.post("/public/{token}/session")
+async def public_session(token: str, request: Request):
+    m = await _messe_by_token(token)
+    _rate_public(request, f"session:{m['id']}")
+    return await create_session(m, request)
+
+
 @router.get("/public/{token}")
 async def public_messe(token: str):
     m = await _messe_by_token(token)
     devs = await _devices_of(m)
     audio = [{"id": f["id"], "name": f["name"], "duration_sec": f.get("duration_sec")}
              for f in await _audio_list(m["id"]) if f.get("status") in ("ready", "ready_unprocessed")]
-    return {"name": m["name"], "location": m.get("location"), "note": m.get("note"),
+    return {"name": m["name"], "location": m.get("location"), "note": m.get("note"), "session_minutes": SESSION_MINUTES,
             "devices": [{"id": d["id"], "name": d.get("user_field") or d.get("serial_number"), "pi_online": mbox_pi.pi_state(d)["online"]} for d in devs],
             "audio": audio}
 
@@ -342,6 +372,7 @@ async def public_device_status(token: str, device_id: str):
 async def public_lampe(token: str, device_id: str, body: dict, request: Request):
     """index 1..5 = einzelne Lampe umschalten, action 'ein' | 'aus' = alle Lampen."""
     m, device = await _public_device(token, device_id)
+    await _require_session(request, m)
     _rate_public(request, device_id)
     action = body.get("action")
     idx = body.get("index")
@@ -361,6 +392,7 @@ async def public_lampe(token: str, device_id: str, body: dict, request: Request)
 @router.post("/public/{token}/{device_id}/play")
 async def public_play(token: str, device_id: str, body: dict, request: Request):
     m, device = await _public_device(token, device_id)
+    await _require_session(request, m)
     _rate_public(request, device_id)
     f = await db.messe_audio.find_one({"id": str(body.get("fid") or ""), "messe_id": m["id"],
                                        "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
@@ -373,6 +405,7 @@ async def public_play(token: str, device_id: str, body: dict, request: Request):
 @router.post("/public/{token}/{device_id}/stop")
 async def public_stop(token: str, device_id: str, request: Request):
     m, device = await _public_device(token, device_id)
+    await _require_session(request, m)
     _rate_public(request, device_id)
     return await _pi_command(device, {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}, "stop", {})
 
@@ -384,6 +417,7 @@ GROUP_COUNTDOWN_SEC = 5
 async def public_group_play(token: str, body: dict, request: Request):
     """Durchsage auf mehreren Geraeten zeitgleich starten: Countdown 5 s, Pis starten bei 0 (start_at)."""
     m = await _messe_by_token(token)
+    await _require_session(request, m)
     _rate_public(request, f"group:{m['id']}")
     f = await db.messe_audio.find_one({"id": str(body.get("fid") or ""), "messe_id": m["id"],
                                        "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
@@ -413,6 +447,7 @@ async def public_group_play(token: str, body: dict, request: Request):
 @router.post("/public/{token}/group-stop")
 async def public_group_stop(token: str, body: dict, request: Request):
     m = await _messe_by_token(token)
+    await _require_session(request, m)
     _rate_public(request, f"group:{m['id']}")
     wanted = [str(x) for x in (body.get("device_ids") or [])] or (m.get("device_ids") or [])
     ids = [i for i in wanted if i in (m.get("device_ids") or [])]

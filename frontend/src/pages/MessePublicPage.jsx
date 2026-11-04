@@ -3,13 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
 import { Lightbulb, Volume2, Square, Radio, ChevronRight, WifiOff, Megaphone } from "lucide-react";
-import { Shell, Hinweis, PUBLIC_BASE as base, errText } from "../components/messe/MessePublicShell";
+import { Shell, Hinweis, PUBLIC_BASE as base, errText, useMesseSession, withSession } from "../components/messe/MessePublicShell";
 
 export default function MessePublicPage() {
   const { token, deviceId } = useParams();
   const navigate = useNavigate();
   const [messe, setMesse] = useState(null);
   const [error, setError] = useState(null);
+  const session = useMesseSession(token);
 
   useEffect(() => {
     axios.get(`${base}/${token}`).then(r => setMesse(r.data)).catch(e => setError(errText(e, "Seite nicht erreichbar")));
@@ -20,7 +21,7 @@ export default function MessePublicPage() {
 
   if (!deviceId) {
     return (
-      <Shell messe={messe}>
+      <Shell messe={messe} session={session}>
         {messe.audio.length > 0 && (
           <button onClick={() => navigate(`/messe/${token}/durchsage`)} data-testid="messe-public-durchsage-btn"
             className="w-full mb-6 h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center gap-3 px-5 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] transition">
@@ -48,13 +49,13 @@ export default function MessePublicPage() {
   }
 
   if (!messe.devices.some(d => d.id === deviceId)) {
-    return <Shell messe={messe}><Hinweis titel="Dieses Gerät gehört nicht zur Messe" text="Bitte den QR-Code am Gerät erneut scannen." /></Shell>;
+    return <Shell messe={messe} session={session}><Hinweis titel="Dieses Gerät gehört nicht zur Messe" text="Bitte den QR-Code am Gerät erneut scannen." /></Shell>;
   }
 
-  return <Shell messe={messe}><GeraetSteuerung token={token} deviceId={deviceId} audio={messe.audio} mehrere={messe.devices.length > 1} /></Shell>;
+  return <Shell messe={messe} session={session}><GeraetSteuerung token={token} deviceId={deviceId} audio={messe.audio} mehrere={messe.devices.length > 1} gesperrt={session.locked} /></Shell>;
 }
 
-function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
+function GeraetSteuerung({ token, deviceId, audio, mehrere, gesperrt }) {
   const navigate = useNavigate();
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -82,7 +83,7 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
   const send = async (key, path, body) => {
     setBusy(key);
     try {
-      const r = await axios.post(`${base}/${token}/${deviceId}/${path}`, body || {}, { timeout: 30000 });
+      const r = await axios.post(`${base}/${token}/${deviceId}/${path}`, body || {}, withSession(token, { timeout: 30000 }));
       if (r.data?.ok === false) toast.error(r.data.fehler || "Befehl nicht ausgeführt");
       else if (r.data?.hinweis) toast.warning(r.data.hinweis);
       else toast.success("Gesendet");
@@ -121,7 +122,7 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
           {[1, 2, 3, 4, 5].map(i => {
             const an = !!lampen[i - 1];
             return (
-              <button key={i} type="button" disabled={!spsOk || busy !== null} onClick={() => send(`l${i}`, "lampe", { index: i })} data-testid={`messe-lampe-${i}`}
+              <button key={i} type="button" disabled={gesperrt || !spsOk || busy !== null} onClick={() => send(`l${i}`, "lampe", { index: i })} data-testid={`messe-lampe-${i}`}
                 className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-1 font-bold text-lg transition-all active:scale-95 disabled:opacity-40 ${an ? "bg-amber-300 border-amber-500 text-gray-900 shadow-[0_0_24px_rgba(251,191,36,0.6)]" : "bg-gray-100 border-gray-200 text-gray-500"}`}>
                 <Lightbulb className={`w-5 h-5 ${an ? "fill-amber-500 text-amber-700" : ""}`} />
                 {i}
@@ -131,9 +132,9 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
           })}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" disabled={!spsOk || busy !== null} onClick={() => send("ein", "lampe", { action: "ein" })} data-testid="messe-lampen-ein"
+          <button type="button" disabled={gesperrt || !spsOk || busy !== null} onClick={() => send("ein", "lampe", { action: "ein" })} data-testid="messe-lampen-ein"
             className="h-12 rounded-xl bg-fuchsia-600 text-white font-semibold active:scale-[0.98] disabled:opacity-40 transition">Alle ein</button>
-          <button type="button" disabled={!spsOk || busy !== null} onClick={() => send("aus", "lampe", { action: "aus" })} data-testid="messe-lampen-aus"
+          <button type="button" disabled={gesperrt || !spsOk || busy !== null} onClick={() => send("aus", "lampe", { action: "aus" })} data-testid="messe-lampen-aus"
             className="h-12 rounded-xl bg-white border border-gray-300 text-gray-800 font-semibold active:scale-[0.98] disabled:opacity-40 transition">Alle aus</button>
         </div>
         <p className="text-xs text-gray-400 mt-3">Lampe antippen = einzeln ein/aus.</p>
@@ -149,7 +150,7 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
         {audio.length === 0 && <p className="text-sm text-gray-400">Keine Durchsage hinterlegt.</p>}
         <div className="space-y-2">
           {audio.map(f => (
-            <button key={f.id} type="button" disabled={busy !== null} onClick={() => send(f.id, "play", { fid: f.id })} data-testid={`messe-play-${f.id}`}
+            <button key={f.id} type="button" disabled={gesperrt || busy !== null} onClick={() => send(f.id, "play", { fid: f.id })} data-testid={`messe-play-${f.id}`}
               className="w-full h-14 rounded-xl bg-gray-900 text-white font-semibold flex items-center gap-3 px-4 active:scale-[0.98] disabled:opacity-40 transition">
               <span className="w-9 h-9 rounded-full bg-fuchsia-600 flex items-center justify-center"><Volume2 className="w-4 h-4" /></span>
               <span className="flex-1 text-left truncate">{f.name}</span>
@@ -157,7 +158,7 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere }) {
             </button>
           ))}
           {audio.length > 0 && (
-            <button type="button" disabled={busy !== null} onClick={() => send("stop", "stop")} data-testid="messe-stop"
+            <button type="button" disabled={gesperrt || busy !== null} onClick={() => send("stop", "stop")} data-testid="messe-stop"
               className="w-full h-12 rounded-xl bg-white border border-gray-300 text-gray-800 font-semibold flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-40 transition">
               <Square className="w-4 h-4" /> Stopp
             </button>

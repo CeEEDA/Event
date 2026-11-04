@@ -5,7 +5,7 @@ import { Copy, ExternalLink, Printer, QrCode } from "lucide-react";
 import { Button } from "../ui/button";
 import { Karte } from "../mbox/MBoxUi";
 
-const publicUrl = (messe, deviceId) => `${window.location.origin}/messe/${messe.public_token}${deviceId ? `/${deviceId}` : ""}`;
+const publicUrl = (messe, deviceId) => `${window.location.origin}/messe/${messe.public_token}${deviceId ? `/${deviceId}` : ""}?s=1`;
 
 export function MesseQr({ messe }) {
   const devices = messe.devices || [];

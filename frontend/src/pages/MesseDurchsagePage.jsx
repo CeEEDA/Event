@@ -3,13 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Radio, Volume2, Square, Megaphone, Play } from "lucide-react";
-import { Shell, Hinweis, PUBLIC_BASE as base, errText } from "../components/messe/MessePublicShell";
+import { Shell, Hinweis, PUBLIC_BASE as base, errText, useMesseSession, withSession } from "../components/messe/MessePublicShell";
 
 export default function MesseDurchsagePage() {
   const { token } = useParams();
   const navigate = useNavigate();
   const [messe, setMesse] = useState(null);
   const [error, setError] = useState(null);
+  const session = useMesseSession(token);
   const [sel, setSel] = useState([]);
   const [fid, setFid] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export default function MesseDurchsagePage() {
     if (sel.length === 0) { toast.error("Mindestens ein Gerät wählen"); return; }
     setBusy(true);
     try {
-      const r = await axios.post(`${base}/${token}/group-play`, { fid, device_ids: sel }, { timeout: 30000 });
+      const r = await axios.post(`${base}/${token}/group-play`, { fid, device_ids: sel }, withSession(token, { timeout: 30000 }));
       const offset = Date.parse(r.data.server_time) - Date.now();   // Serveruhr -> Handyuhr
       setRun({ target: Date.parse(r.data.start_at) - offset, label: r.data.label, devices: r.data.devices, offline: r.data.offline || [] });
       if (r.data.offline?.length) toast.warning(`Offline: ${r.data.offline.join(", ")} – startet, sobald wieder erreichbar`);
@@ -55,7 +56,7 @@ export default function MesseDurchsagePage() {
   const stop = async () => {
     setBusy(true);
     try {
-      await axios.post(`${base}/${token}/group-stop`, { device_ids: sel }, { timeout: 30000 });
+      await axios.post(`${base}/${token}/group-stop`, { device_ids: sel }, withSession(token, { timeout: 30000 }));
       setRun(null);
       toast.success("Gestoppt");
     } catch (e) {
@@ -71,7 +72,7 @@ export default function MesseDurchsagePage() {
   const audio = messe.audio.find(f => f.id === fid);
 
   return (
-    <Shell messe={messe}>
+    <Shell messe={messe} session={session}>
       {run && <Countdown rest={rest} run={run} onStop={stop} onClose={() => setRun(null)} busy={busy} />}
       <div className="space-y-5" data-testid="messe-durchsage-page">
         <div className="flex items-center gap-3">
@@ -119,12 +120,12 @@ export default function MesseDurchsagePage() {
           </div>
         </section>
 
-        <button type="button" disabled={busy || !fid || sel.length === 0} onClick={start} data-testid="messe-durchsage-start"
+        <button type="button" disabled={session.locked || busy || !fid || sel.length === 0} onClick={start} data-testid="messe-durchsage-start"
           className="w-full h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] disabled:opacity-40 transition">
           <Play className="w-6 h-6 fill-white" /> Start auf {sel.length} Gerät{sel.length === 1 ? "" : "en"}
         </button>
         {audio && <p className="text-center text-xs text-gray-400">„{audio.name}“ startet nach einem 5-Sekunden-Countdown auf allen gewählten Geräten gleichzeitig.</p>}
-        <button type="button" disabled={busy} onClick={stop} data-testid="messe-durchsage-stop"
+        <button type="button" disabled={session.locked || busy} onClick={stop} data-testid="messe-durchsage-stop"
           className="w-full h-12 rounded-xl bg-white border border-gray-300 text-gray-800 font-semibold flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-40 transition">
           <Square className="w-4 h-4" /> Stopp
         </button>
