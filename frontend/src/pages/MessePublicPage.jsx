@@ -14,8 +14,8 @@ export default function MessePublicPage() {
   const session = useMesseSession(token);
 
   useEffect(() => {
-    axios.get(`${base}/${token}`).then(r => setMesse(r.data)).catch(e => setError(errText(e, "Seite nicht erreichbar")));
-  }, [token]);
+    axios.get(`${base}/${token}`, withSession(token)).then(r => setMesse(r.data)).catch(e => setError(errText(e, "Seite nicht erreichbar")));
+  }, [token, session.sid]);
 
   if (error) return <Shell><Hinweis titel={error} text="Bitte wenden Sie sich an das Standpersonal von Eventenergie." /></Shell>;
   if (!messe) return <Shell><p className="text-center text-sm text-gray-400 py-12">Laden …</p></Shell>;
@@ -165,7 +165,7 @@ function GeraetSteuerung({ token, deviceId, audio, mehrere, gesperrt }) {
         </div>
         {audio.length === 0 && <p className="text-sm text-gray-400">Keine Durchsage hinterlegt.</p>}
         <div className="space-y-2">
-          {audio.map(f => (
+          {audio.filter(f => f.status !== "processing").map(f => (
             <button key={f.id} type="button" disabled={gesperrt || busy !== null} onClick={() => send(f.id, "play", { fid: f.id })} data-testid={`messe-play-${f.id}`}
               className="w-full h-14 rounded-xl bg-gray-900 text-white font-semibold flex items-center gap-3 px-4 active:scale-[0.98] disabled:opacity-40 transition">
               <span className="w-9 h-9 rounded-full bg-fuchsia-600 flex items-center justify-center"><Volume2 className="w-4 h-4" /></span>

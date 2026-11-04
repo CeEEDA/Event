@@ -2,6 +2,7 @@
 Besucher scannen einen QR-Code am Lichtmast und koennen ohne Login die Lampen schalten
 und die hinterlegte Testdurchsage abspielen."""
 import asyncio
+import logging
 import os
 import secrets
 import tempfile
@@ -20,6 +21,7 @@ from routes.mbox import get_user, _audit, _device, _forward, _pi_command, mbox_l
 from routes import mbox_audio
 
 router = APIRouter(prefix="/api/messe", tags=["messe"])
+logger = logging.getLogger(__name__)
 db = None
 
 PUBLIC_RATE_PER_MIN = 40
@@ -252,13 +254,11 @@ async def _process_messe_audio(fid: str, src: Path, stored: str, messe_id: str, 
         await _notify_sync(messe_id)
 
 
-@router.post("/{messe_id}/audio")
-async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
-                             user: dict = Depends(get_user)):
-    """source='record': Mikrofon-Aufnahme aus dem Browser (webm/mp4). enhance='1': Sprach-Optimierung (Nebengeraeusche, 0 dB)."""
-    _staff(user)
-    await _messe(messe_id)
-    do_enhance = str(enhance).lower() in ("1", "true", "on", "yes")
+GUEST_KEEP_MINUTES = 15
+
+
+async def _store_upload(messe_id: str, file: UploadFile, name: str, enhance: bool, source: str, uploaded_by: str,
+                        temporary: bool = False, keep_minutes: int = GUEST_KEEP_MINUTES, session_id: Optional[str] = None) -> dict:
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in mbox_audio.ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext or '?'} nicht erlaubt (MP3, WAV, M4A, OGG, AAC, FLAC)")
@@ -273,14 +273,48 @@ async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: 
     tmp = tempfile.NamedTemporaryFile(suffix=ext, prefix="messe_ffmpeg_", delete=False)
     with tmp:
         tmp.write(bytes(data))
-    label = (name or os.path.splitext(file.filename or "Testdurchsage")[0]).strip()[:80] or ("Aufnahme" if source == "record" else "Testdurchsage")
+    label = (name or os.path.splitext(file.filename or "")[0]).strip()[:80] or ("Aufnahme" if source == "record" else "Testdurchsage")
     stored = f"messe{messe_id[:8]}_{fid[:8]}.mp3"
     doc = {"id": fid, "messe_id": messe_id, "name": label, "original_name": file.filename, "stored": stored, "status": "processing",
-           "size": size, "sha256": None, "uploaded_by": user.get("name"), "uploaded_at": _now(),
-           "source": "record" if source == "record" else "upload", "enhanced": do_enhance}
+           "size": size, "sha256": None, "uploaded_by": uploaded_by, "uploaded_at": _now(),
+           "source": "record" if source == "record" else "upload", "enhanced": enhance,
+           "temporary": temporary, "session_id": session_id,
+           "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=max(1, min(keep_minutes, 240)))).isoformat() if temporary else None}
     await db.messe_audio.insert_one(dict(doc))
-    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id, do_enhance))
+    asyncio.create_task(_process_messe_audio(fid, Path(tmp.name), stored, messe_id, enhance))
     return doc
+
+
+async def cleanup_expired_audio() -> int:
+    """Gast-Aufnahmen (temporary) nach Ablauf entfernen - eng gefiltert, nur Dateien mit gesetztem expires_at."""
+    now = _now()
+    rows = await db.messe_audio.find({"temporary": True, "expires_at": {"$ne": None, "$lt": now}}, {"_id": 0}).to_list(200)
+    for f in rows:
+        await db.messe_audio.delete_one({"id": f["id"], "temporary": True})
+        await mbox_audio.delete_stored(f["stored"])
+        await _notify_sync(f["messe_id"])
+    return len(rows)
+
+
+async def cleanup_loop():
+    while True:
+        try:
+            n = await cleanup_expired_audio()
+            if n:
+                logger.info(f"Messe: {n} abgelaufene Gast-Aufnahme(n) entfernt")
+        except Exception as e:
+            logger.warning(f"Messe cleanup: {e}")
+        await asyncio.sleep(60)
+
+
+@router.post("/{messe_id}/audio")
+async def upload_messe_audio(messe_id: str, file: UploadFile = File(...), name: str = Form(""), enhance: str = Form(""), source: str = Form("upload"),
+                             temporary: str = Form(""), keep_minutes: int = Form(GUEST_KEEP_MINUTES), user: dict = Depends(get_user)):
+    """source='record': Mikrofon-Aufnahme (webm/mp4). enhance='1': Sprach-Optimierung. temporary='1': Gast-Aufnahme, wird nach keep_minutes geloescht."""
+    _staff(user)
+    await _messe(messe_id)
+    flag = lambda v: str(v).lower() in ("1", "true", "on", "yes")
+    return await _store_upload(messe_id, file, name, flag(enhance), source, user.get("name"), temporary=flag(temporary), keep_minutes=keep_minutes)
 
 
 @router.patch("/{messe_id}/audio/{fid}")
@@ -333,15 +367,48 @@ async def public_session(token: str, request: Request):
     return await create_session(m, request)
 
 
+def _visible_to(f: dict, sid: str) -> bool:
+    """Gast-Aufnahmen mit Sitzungsbezug sieht nur die eigene Sitzung; alles andere alle."""
+    return not f.get("session_id") or f.get("session_id") == sid
+
+
 @router.get("/public/{token}")
-async def public_messe(token: str):
+async def public_messe(token: str, request: Request):
     m = await _messe_by_token(token)
+    await cleanup_expired_audio()
+    sid = request.headers.get("x-messe-session") or ""
     devs = await _devices_of(m)
-    audio = [{"id": f["id"], "name": f["name"], "duration_sec": f.get("duration_sec")}
-             for f in await _audio_list(m["id"]) if f.get("status") in ("ready", "ready_unprocessed")]
+    audio = [{"id": f["id"], "name": f["name"], "duration_sec": f.get("duration_sec"), "status": f["status"],
+              "temporary": bool(f.get("temporary")), "own": bool(f.get("session_id")) and f.get("session_id") == sid, "expires_at": f.get("expires_at")}
+             for f in await _audio_list(m["id"])
+             if f.get("status") in ("ready", "ready_unprocessed", "processing") and _visible_to(f, sid)
+             and (f["status"] != "processing" or (f.get("session_id") and f.get("session_id") == sid))]
     return {"name": m["name"], "location": m.get("location"), "note": m.get("note"), "session_minutes": SESSION_MINUTES,
+            "guest_keep_minutes": GUEST_KEEP_MINUTES,
             "devices": [{"id": d["id"], "name": d.get("user_field") or d.get("serial_number"), "pi_online": mbox_pi.pi_state(d)["online"]} for d in devs],
             "audio": audio}
+
+
+@router.post("/public/{token}/record")
+async def public_record(token: str, request: Request, file: UploadFile = File(...), name: str = Form("")):
+    """Gast spricht eine eigene Durchsage ein: nur fuer seine Sitzung sichtbar, Sprach-Optimierung, wird nach GUEST_KEEP_MINUTES geloescht."""
+    m = await _messe_by_token(token)
+    await _require_session(request, m)
+    _rate_public(request, f"record:{m['id']}")
+    sid = request.headers.get("x-messe-session")
+    doc = await _store_upload(m["id"], file, name or "Gast-Durchsage", True, "record", f"Messe-Besucher ({m['name']})",
+                              temporary=True, keep_minutes=GUEST_KEEP_MINUTES, session_id=sid)
+    return {"id": doc["id"], "name": doc["name"], "status": doc["status"], "temporary": True, "own": True, "expires_at": doc["expires_at"]}
+
+
+@router.get("/public/{token}/audio/{fid}")
+async def public_audio_status(token: str, fid: str, request: Request):
+    m = await _messe_by_token(token)
+    f = await db.messe_audio.find_one({"id": fid, "messe_id": m["id"]}, {"_id": 0})
+    if not f or not _visible_to(f, request.headers.get("x-messe-session") or ""):
+        raise HTTPException(status_code=404, detail="Durchsage nicht gefunden")
+    return {"id": f["id"], "name": f["name"], "status": f["status"], "duration_sec": f.get("duration_sec"), "error": f.get("error"),
+            "temporary": bool(f.get("temporary")), "own": True, "expires_at": f.get("expires_at")}
 
 
 async def _public_device(token: str, device_id: str) -> tuple[dict, dict]:
@@ -400,7 +467,7 @@ async def public_play(token: str, device_id: str, body: dict, request: Request):
     _rate_public(request, device_id)
     f = await db.messe_audio.find_one({"id": str(body.get("fid") or ""), "messe_id": m["id"],
                                        "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
-    if not f:
+    if not f or not _visible_to(f, request.headers.get("x-messe-session") or ""):
         raise HTTPException(status_code=404, detail="Durchsage nicht gefunden")
     return await _pi_command(device, {**PUBLIC_USER, "name": f"Messe-Besucher ({m['name']})"}, "play",
                              {"file": f["stored"], "sha256": f.get("sha256"), "loop": False, "label": f["name"]})
@@ -425,7 +492,7 @@ async def public_group_play(token: str, body: dict, request: Request):
     _rate_public(request, f"group:{m['id']}")
     f = await db.messe_audio.find_one({"id": str(body.get("fid") or ""), "messe_id": m["id"],
                                        "status": {"$in": ["ready", "ready_unprocessed"]}}, {"_id": 0})
-    if not f:
+    if not f or not _visible_to(f, request.headers.get("x-messe-session") or ""):
         raise HTTPException(status_code=404, detail="Durchsage nicht gefunden")
     wanted = [str(x) for x in (body.get("device_ids") or []) if str(x) in (m.get("device_ids") or [])]
     if not wanted:

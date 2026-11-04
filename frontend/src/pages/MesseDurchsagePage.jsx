@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Radio, Volume2, Square, Megaphone, Play } from "lucide-react";
+import { ArrowLeft, Check, Radio, Volume2, Square, Megaphone, Play, Mic, Clock } from "lucide-react";
 import { Shell, Hinweis, PUBLIC_BASE as base, errText, useMesseSession, withSession } from "../components/messe/MessePublicShell";
+import { AudioRecorder } from "../components/mbox/AudioRecorder";
 
 export default function MesseDurchsagePage() {
   const { token } = useParams();
@@ -16,15 +17,48 @@ export default function MesseDurchsagePage() {
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState(null);   // { target(ms, client clock), label, devices, offline }
   const [rest, setRest] = useState(null);
+  const [aufnahme, setAufnahme] = useState(false);
+  const [recBusy, setRecBusy] = useState(false);
   const tick = useRef(null);
 
-  useEffect(() => {
-    axios.get(`${base}/${token}`).then(r => {
+  const load = useCallback(async (first = false) => {
+    try {
+      const r = await axios.get(`${base}/${token}`, withSession(token));
       setMesse(r.data);
-      setSel(r.data.devices.map(d => d.id));
-      setFid(r.data.audio[0]?.id || null);
-    }).catch(e => setError(errText(e, "Seite nicht erreichbar")));
+      if (first) { setSel(r.data.devices.map(d => d.id)); setFid(r.data.audio[0]?.id || null); }
+    } catch (e) {
+      if (first) setError(errText(e, "Seite nicht erreichbar"));
+    }
   }, [token]);
+
+  useEffect(() => { load(true); }, [load]);
+  useEffect(() => { if (session.sid) load(); }, [session.sid, load]);   // eigene Gast-Aufnahmen nachladen
+
+  // eigene Aufnahme in Verarbeitung -> Status nachfragen
+  const eigeneOffen = (messe?.audio || []).some(f => f.own && f.status === "processing");
+  useEffect(() => {
+    if (!eigeneOffen) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [eigeneOffen, load]);
+
+  const saveRecording = async (file, { name }) => {
+    setRecBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("name", name);
+      const r = await axios.post(`${base}/${token}/record`, fd, withSession(token, { timeout: 120000 }));
+      toast.success(`Aufnahme wird optimiert – automatisch gelöscht nach ${messe?.guest_keep_minutes || 15} Min.`);
+      setAufnahme(false);
+      setFid(r.data.id);
+      await load();
+    } catch (e) {
+      toast.error(errText(e, "Aufnahme konnte nicht gespeichert werden"));
+    } finally {
+      setRecBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!run) return;
@@ -86,15 +120,33 @@ export default function MesseDurchsagePage() {
           <div className="space-y-2">
             {messe.audio.map(f => {
               const on = f.id === fid;
+              const wip = f.status === "processing";
               return (
-                <button key={f.id} type="button" onClick={() => setFid(f.id)} data-testid={`messe-durchsage-file-${f.id}`}
-                  className={`w-full h-12 rounded-xl border-2 flex items-center gap-3 px-3 text-left transition ${on ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-200 bg-white"}`}>
-                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${on ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300"}`}>{on && <Check className="w-3 h-3" />}</span>
-                  <span className="flex-1 truncate font-medium text-gray-900">{f.name}</span>
+                <button key={f.id} type="button" disabled={wip} onClick={() => setFid(f.id)} data-testid={`messe-durchsage-file-${f.id}`}
+                  className={`w-full min-h-12 py-2 rounded-xl border-2 flex items-center gap-3 px-3 text-left transition disabled:opacity-60 ${on ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-200 bg-white"}`}>
+                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${on ? "border-fuchsia-600 bg-fuchsia-600 text-white" : "border-gray-300"}`}>{on && <Check className="w-3 h-3" />}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block truncate font-medium text-gray-900">{f.name}</span>
+                    {f.own && <span className="text-[11px] text-amber-700 flex items-center gap-1"><Clock className="w-3 h-3" /> {wip ? "wird optimiert …" : `Ihre Aufnahme · bis ${new Date(f.expires_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`}</span>}
+                  </span>
                   {f.duration_sec && <span className="text-xs text-gray-400">{Math.round(f.duration_sec)} s</span>}
                 </button>
               );
             })}
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            {!aufnahme ? (
+              <button type="button" disabled={session.locked} onClick={() => setAufnahme(true)} data-testid="messe-durchsage-record-btn"
+                className="w-full h-12 rounded-xl border-2 border-dashed border-red-300 text-red-700 font-semibold flex items-center justify-center gap-2 disabled:opacity-40">
+                <Mic className="w-4 h-4" /> Eigene Durchsage aufnehmen
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <AudioRecorder busy={recBusy} onSave={saveRecording} defaultName="Meine Durchsage" maxSec={60} />
+                <button type="button" onClick={() => setAufnahme(false)} className="text-xs text-gray-500 underline" data-testid="messe-durchsage-record-cancel">Abbrechen</button>
+              </div>
+            )}
+            <p className="text-[11px] text-gray-400 mt-2">Ihre Aufnahme wird automatisch optimiert, ist nur auf diesem Handy wählbar und wird nach {messe.guest_keep_minutes || 15} Minuten gelöscht.</p>
           </div>
         </section>
 
@@ -120,7 +172,7 @@ export default function MesseDurchsagePage() {
           </div>
         </section>
 
-        <button type="button" disabled={session.locked || busy || !fid || sel.length === 0} onClick={start} data-testid="messe-durchsage-start"
+        <button type="button" disabled={session.locked || busy || !fid || audio?.status === "processing" || sel.length === 0} onClick={start} data-testid="messe-durchsage-start"
           className="w-full h-16 rounded-2xl bg-fuchsia-600 text-white font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-fuchsia-600/30 active:scale-[0.98] disabled:opacity-40 transition">
           <Play className="w-6 h-6 fill-white" /> Start auf {sel.length} Gerät{sel.length === 1 ? "" : "en"}
         </button>

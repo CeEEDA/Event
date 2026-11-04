@@ -2362,6 +2362,8 @@ async def startup_event():
     try:
         from routes.mbox import start_all as _mbox_start_all
         asyncio.create_task(_mbox_start_all())
+        from routes.messe import cleanup_loop as _messe_cleanup_loop
+        asyncio.create_task(_messe_cleanup_loop())
     except Exception as _e:
         logger.warning(f"M-Box Dienste konnten nicht starten: {_e}")
 
