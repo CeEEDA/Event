@@ -193,23 +193,7 @@ export default function UserEditModal({
                     <div className="flex items-center gap-2 mb-2">
                       <Label className="text-gray-900 font-medium">M-Box Lichtmast (Fernbedienung)</Label>
                     </div>
-                    <p className="text-xs text-gray-500 mb-3">Steuert Generator, Lampen und Netzumschaltung echter Masten. Standard: kein Zugriff. „Bedienen“ schließt „Status sehen“ ein. Diagnose, GPS-Test, Wartungs-/Kundenzähler-Reset und Probelauf bleiben Admins vorbehalten.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {[
-                        { key: "mbox_lesen", label: "Status sehen" },
-                        { key: "mbox_bedienen", label: "Bedienen (schalten)" },
-                      ].map(m => (
-                        <div key={m.key} className="flex items-center justify-between bg-white rounded-md px-3 py-2 border border-amber-100">
-                          <Label className="text-sm text-gray-800 cursor-pointer" htmlFor={`mod-${m.key}`}>{m.label}</Label>
-                          <Switch
-                            id={`mod-${m.key}`}
-                            checked={!!formData.apps.modules?.[m.key]}
-                            onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), [m.key]: checked, ...(m.key === "mbox_bedienen" && checked ? { mbox_lesen: true } : {}), ...(m.key === "mbox_lesen" && !checked ? { mbox_bedienen: false } : {}) } } }))}
-                            data-testid={`module-toggle-${m.key}`}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-xs text-gray-700" data-testid="mbox-permissions-info">Alle Mitarbeiter sind automatisch freigeschaltet (Status sehen und Bedienen). Diagnose, GPS-Test, Wartungs-/Kundenzähler-Reset und Probelauf bleiben Admins vorbehalten.</p>
                   </div>
 
                   {/* ADR – Tankwagen Betanker */}

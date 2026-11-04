@@ -55,13 +55,8 @@ def mbox_level(user: dict) -> str:
         return "admin"
     if user.get("role") == "kunde":
         return "kunde"  # konkreter Zugriff pro Mast ueber customer_device_ids (Kundennr. oder Freigabe im Auftrag)
-    if user.get("role") != "mitarbeiter":
-        return "none"
-    modules = (user.get("apps") or {}).get("modules") or {}
-    if modules.get("mbox_bedienen"):
+    if user.get("role") == "mitarbeiter":
         return "bedienen"
-    if modules.get("mbox_lesen"):
-        return "lesen"
     return "none"
 
 

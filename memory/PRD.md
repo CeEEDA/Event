@@ -322,3 +322,6 @@ German (all UI + agent responses in German only).
 - Befund Live (`/api/messe/public/<token>/group-status`): Pi online, aber SPS `sps_fehler: "Zeitüberschreitung: Verbinden (8 s)"` → Server erreicht opc.tcp://…:4840 der M-Box 108 nicht (Netzwerk/VPN, kein Code-Fehler).
 - Neu: Admin-Endpoint `GET /api/messe/{id}/sps-check` (Staff) + Kachel „Verbindungscheck Lichtsteuerung" in MesseDetail (`MesseSpsCheck.jsx`) mit Fehlertext, Endpoint, Pi-Status, Link zur Fernbedienung.
 - Besucher-Beleuchtungsseite: neutraler Hinweis „Lichtsteuerung aktuell nicht verfügbar" + „Steuerung wird abgefragt …" während Laden (kein technischer Grund für Gäste – Nutzerwunsch).
+
+## 2026-06 – M-Box Fernbedienung
+- Alle Mitarbeiter (role=mitarbeiter) haben jetzt automatisch M-Box-Level "bedienen" (mbox_level in backend/routes/mbox.py); Einzel-Schalter im Benutzer-Dialog durch Hinweis ersetzt. Admin-Funktionen (Diagnose etc.) bleiben Admin-only.

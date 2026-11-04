@@ -5,7 +5,7 @@
 - **Preview (Testing)**: admin@test.com / password
 
 ## Mitarbeiter Accounts (Preview)
-- **Anna Weber (Mitarbeiter, Verwaltung+Abrechnung aktiv, M-Box: mbox_lesen=true / mbox_bedienen=false)**: ma1@test.com / Anna2026!  (Passwort am 2026-06 im Preview neu gesetzt)
+- **Anna Weber (Mitarbeiter, Verwaltung+Abrechnung aktiv, M-Box: alle Mitarbeiter automatisch Bedienen-Recht (seit 2026-06))**: ma1@test.com / Anna2026!  (Passwort am 2026-06 im Preview neu gesetzt)
 
 ## M-Box Test-Gerät (Preview)
 - Geräteverwaltung: `MBOX-TEST-1` („Lichtmast Test 1"), Typ M-Box, Endpoint opc.tcp://192.168.0.100:4840, Port 8101 – keine echte SPS im Preview → immer „Zeitüberschreitung: Verbinden"
