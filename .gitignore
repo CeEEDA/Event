@@ -2378,3 +2378,7 @@ frontend/node_modules/.cache/default-development/65.pack
 frontend/node_modules/.cache/default-development/73.pack
 
 tools/ffmpeg/
+
+# Datenbank-Backups und Dumps nicht ins Repository (zu gross fuer GitHub-Push)
+backups/
+dump/
